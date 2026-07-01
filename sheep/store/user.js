@@ -125,8 +125,8 @@ const user = defineStore('user', {
       this.numData = cloneDeep(defaultNumData);
       // 清空购物车的缓存
       cart().emptyList();
-      // 清理 Delta 打手身份和模式缓存
-      delta().clearWorkerState();
+      // 清理 Delta 打手、俱乐部身份和模式缓存
+      delta().clearDeltaData();
     },
 
     // 登录后，加载各种信息
