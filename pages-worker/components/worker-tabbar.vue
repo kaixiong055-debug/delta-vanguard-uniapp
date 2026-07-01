@@ -28,9 +28,10 @@
 
   const items = [
     { text: '工作台', icon: '台', url: DeltaRoute.WORKER_HOME },
-    { text: '申请', icon: '审', url: DeltaRoute.WORKER_APPLY_STATUS },
+    { text: '大厅', icon: '抢', url: DeltaRoute.WORKER_POOL },
+    { text: '任务', icon: '单', url: DeltaRoute.WORKER_ORDERS },
+    { text: '收入', icon: '收', url: DeltaRoute.WORKER_INCOME },
     { text: '我的', icon: '我', url: DeltaRoute.WORKER_PROFILE },
-    { text: '商城', icon: '店', url: DeltaRoute.SHOP_USER },
   ];
 
   function switchPage(url) {

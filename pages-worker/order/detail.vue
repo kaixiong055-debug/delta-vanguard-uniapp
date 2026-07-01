@@ -2,30 +2,80 @@
   <s-layout title="任务详情" :bgStyle="{ color: '#f4f6f8' }">
     <view class="detail-page">
       <view class="detail-card" v-if="detail.id">
-        <view class="title">{{
-          detail.title || detail.serviceName || detail.goodsName || '服务任务'
-        }}</view>
+        <view class="title">{{ detail.productName || '服务任务' }}</view>
         <view class="row">
           <text class="label">状态</text>
-          <text class="value">{{ detail.statusText || detail.statusName || '待处理' }}</text>
+          <text class="value">{{
+            detail.statusName || getServiceOrderStatusText(detail.status)
+          }}</text>
         </view>
-        <view class="row" v-if="detail.serverName || detail.gameServer">
-          <text class="label">区服</text>
-          <text class="value">{{ detail.serverName || detail.gameServer }}</text>
-        </view>
-        <view class="row" v-if="detail.requirement || detail.remark">
-          <text class="label">需求</text>
-          <text class="value">{{ detail.requirement || detail.remark }}</text>
-        </view>
+        <view class="row"
+          ><text class="label">服务单</text
+          ><text class="value">{{ detail.serviceOrderNo }}</text></view
+        >
+        <view class="row"
+          ><text class="label">商城单</text
+          ><text class="value">{{ detail.tradeOrderNo }}</text></view
+        >
+        <view class="row"
+          ><text class="label">规格</text
+          ><text class="value">{{ detail.skuName || '-' }}</text></view
+        >
+        <view class="row"
+          ><text class="label">类型</text
+          ><text class="value"
+            >{{ detail.serviceTypeName || getServiceTypeText(detail.serviceType) }} ·
+            {{ detail.deviceTypeName || getDeviceTypeText(detail.deviceType) }}</text
+          ></view
+        >
+        <view class="row"
+          ><text class="label">金额</text
+          ><text class="value amount">{{ formatDeltaAmount(detail.serviceAmount) }}</text></view
+        >
+        <view class="row" v-if="detail.customerRemark"
+          ><text class="label">备注</text
+          ><text class="value">{{ detail.customerRemark }}</text></view
+        >
       </view>
-      <s-empty v-else-if="!loading" text="暂无任务详情" />
+      <view v-if="error" class="error-card">{{ error }}<text @tap="refresh">重试</text></view>
+      <s-empty v-if="!loading && !error && !detail.id" text="暂无任务详情" />
 
-      <view class="action-row" v-if="detail.id">
-        <button class="ss-reset-button ghost-btn" @tap="startOrder">开始服务</button>
-        <button class="ss-reset-button submit-btn" @tap="goSubmit">提交进度</button>
+      <view
+        class="action-row"
+        v-if="Number(detail.status) === ServiceOrderStatus.ACCEPTED_PENDING_START"
+      >
+        <button class="ss-reset-button submit-btn" :disabled="submitting" @tap="confirmStart">{{
+          submitting ? '处理中' : '开始服务'
+        }}</button>
       </view>
-      <button v-if="detail.id" class="ss-reset-button finish-btn" @tap="finishOrder"
-        >提交完成</button
+      <view v-if="Number(detail.status) === ServiceOrderStatus.IN_PROGRESS" class="action-grid">
+        <button class="ss-reset-button ghost-btn" @tap="goProgress">提交进度</button>
+        <button class="ss-reset-button ghost-btn" @tap="goEvidence">登记凭证</button>
+        <button class="ss-reset-button finish-btn" @tap="goCompletion">提交完成</button>
+      </view>
+
+      <view v-if="progressList.length" class="section-card"
+        ><view class="section-title">进度记录</view
+        ><view v-for="item in progressList" :key="item.id" class="record"
+          ><view>{{ item.progressTypeName || progressTypeMap[item.progressType] }}</view
+          ><text>{{ item.progressPercent ?? '-' }}% · {{ formatDeltaTime(item.createTime) }}</text
+          ><view>{{ item.content }}</view></view
+        ></view
+      >
+      <view v-if="evidenceList.length" class="section-card"
+        ><view class="section-title">服务凭证</view
+        ><view v-for="item in evidenceList" :key="item.id" class="record"
+          ><view>{{ item.evidenceTypeName || evidenceTypeMap[item.evidenceType] }}</view
+          ><text>{{ formatDeltaTime(item.createTime) }}</text
+          ><view>{{ item.content }}</view
+          ><button
+            v-if="Number(detail.status) === ServiceOrderStatus.IN_PROGRESS"
+            class="ss-reset-button delete-btn"
+            :disabled="deletingId === item.id"
+            @tap="confirmDelete(item.id)"
+            >删除</button
+          ></view
+        ></view
       >
     </view>
   </s-layout>
@@ -33,46 +83,103 @@
 
 <script setup>
   import { ref } from 'vue';
-  import { onLoad } from '@dcloudio/uni-app';
+  import { onLoad, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import WorkerOrderApi from '@/sheep/api/delta/workerOrder';
+  import {
+    ServiceOrderStatus,
+    evidenceTypeMap,
+    formatDeltaAmount,
+    formatDeltaTime,
+    getDeviceTypeText,
+    getServiceOrderStatusText,
+    getServiceTypeText,
+    progressTypeMap,
+  } from '@/sheep/helper/delta';
 
   const id = ref('');
   const detail = ref({});
   const loading = ref(false);
+  const error = ref('');
+  const submitting = ref(false);
+  const deletingId = ref(null);
+  const progressList = ref([]);
+  const evidenceList = ref([]);
+  const deltaStore = sheep.$store('delta');
 
   async function getDetail() {
     loading.value = true;
+    error.value = '';
     const res = await WorkerOrderApi.getDetail(id.value, { showError: false });
     if (res?.code === 0) {
       detail.value = res.data || {};
+    } else {
+      error.value = res?.msg || '任务详情加载失败';
     }
     loading.value = false;
   }
 
+  async function getRecords() {
+    const [progressRes, evidenceRes] = await Promise.all([
+      WorkerOrderApi.getProgressList(id.value, { showError: false }),
+      WorkerOrderApi.getEvidenceList(id.value, { showError: false }),
+    ]);
+    if (progressRes?.code === 0) progressList.value = progressRes.data || [];
+    if (evidenceRes?.code === 0) evidenceList.value = evidenceRes.data || [];
+  }
+  async function refresh() {
+    await Promise.all([getDetail(), getRecords()]);
+  }
+
+  function confirmStart() {
+    if (submitting.value) return;
+    uni.showModal({
+      title: '开始服务',
+      content: '确认现在开始执行该服务？',
+      success: ({ confirm }) => {
+        if (confirm) startOrder();
+      },
+    });
+  }
   async function startOrder() {
+    submitting.value = true;
     const res = await WorkerOrderApi.startOrder(id.value);
-    if (res?.code === 0) {
-      getDetail();
-    }
+    submitting.value = false;
+    if (res?.code === 0) await refresh();
   }
 
-  async function finishOrder() {
-    const res = await WorkerOrderApi.finishOrder(id.value);
-    if (res?.code === 0) {
-      getDetail();
-    }
+  function confirmDelete(evidenceId) {
+    if (deletingId.value) return;
+    uni.showModal({
+      title: '删除凭证',
+      content: '确认删除这条凭证？',
+      success: ({ confirm }) => {
+        if (confirm) deleteEvidence(evidenceId);
+      },
+    });
+  }
+  async function deleteEvidence(evidenceId) {
+    deletingId.value = evidenceId;
+    const res = await WorkerOrderApi.deleteEvidence(evidenceId);
+    deletingId.value = null;
+    if (res?.code === 0) await getRecords();
   }
 
-  function goSubmit() {
+  function goProgress() {
     sheep.$router.go('/pages-worker/progress/submit', { id: id.value });
+  }
+  function goEvidence() {
+    sheep.$router.go('/pages-worker/evidence/submit', { id: id.value });
+  }
+  function goCompletion() {
+    sheep.$router.go('/pages-worker/completion/submit', { id: id.value });
   }
 
   onLoad((options = {}) => {
     id.value = options.id || '';
-    if (id.value) {
-      getDetail();
-    }
+  });
+  onShow(async () => {
+    if (id.value && (await deltaStore.guardWorkerPage())) refresh();
   });
 </script>
 
@@ -149,9 +256,64 @@
   }
 
   .finish-btn {
-    margin-top: 18rpx;
     width: 100%;
     color: #ffffff;
     background: #17191f;
+  }
+  .amount {
+    color: #e60012;
+    font-weight: 800;
+  }
+  .action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16rpx;
+    margin-top: 26rpx;
+  }
+  .action-grid .finish-btn {
+    grid-column: 1 / -1;
+  }
+  .section-card {
+    margin-top: 22rpx;
+    padding: 24rpx;
+    border-radius: 18rpx;
+    background: #fff;
+  }
+  .section-title {
+    margin-bottom: 16rpx;
+    color: #17191f;
+    font-size: 28rpx;
+    font-weight: 800;
+  }
+  .record {
+    position: relative;
+    padding: 16rpx 0;
+    border-top: 1rpx solid #f0f1f3;
+    color: #333;
+    font-size: 24rpx;
+    line-height: 36rpx;
+  }
+  .record text {
+    color: #999;
+    font-size: 22rpx;
+  }
+  .delete-btn {
+    position: absolute;
+    right: 0;
+    top: 14rpx;
+    color: #e60012;
+    font-size: 22rpx;
+  }
+  .error-card {
+    margin-bottom: 18rpx;
+    padding: 22rpx;
+    border-radius: 14rpx;
+    background: #fff;
+    color: #8c929d;
+    font-size: 24rpx;
+  }
+  .error-card text {
+    float: right;
+    color: #e60012;
   }
 </style>

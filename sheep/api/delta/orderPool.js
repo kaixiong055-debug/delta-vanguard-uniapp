@@ -23,11 +23,11 @@ const OrderPoolApi = {
       custom: withAuth(custom),
     });
   },
-  takeOrder: (id) => {
+  claimOrder: (serviceOrderId) => {
     return request({
-      url: '/delta/order-pool/take',
+      url: '/delta/order-pool/claim',
       method: 'POST',
-      data: { id },
+      data: { serviceOrderId },
       custom: withAuth({
         showLoading: true,
         showSuccess: true,

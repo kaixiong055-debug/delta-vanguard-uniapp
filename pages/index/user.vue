@@ -15,6 +15,7 @@
     >
       <s-block-item :type="item.id" :data="item.property" :styles="item.property.style" />
     </s-block>
+    <delta-service-entry />
     <delta-worker-entry />
   </s-layout>
 </template>
@@ -24,6 +25,7 @@
   import { onShow, onPageScroll, onPullDownRefresh } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import DeltaWorkerEntry from './components/delta-worker-entry.vue';
+  import DeltaServiceEntry from './components/delta-service-entry.vue';
 
   // 隐藏原生tabBar
   uni.hideTabBar({

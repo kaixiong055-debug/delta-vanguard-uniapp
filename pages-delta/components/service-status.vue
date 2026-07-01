@@ -4,6 +4,7 @@
 
 <script setup>
   import { computed } from 'vue';
+  import { getServiceOrderStatusText } from '@/sheep/helper/delta';
 
   const props = defineProps({
     status: {
@@ -16,7 +17,7 @@
     },
   });
 
-  const text = computed(() => props.text || String(props.status || '待处理'));
+  const text = computed(() => props.text || getServiceOrderStatusText(props.status));
 </script>
 
 <style lang="scss" scoped>

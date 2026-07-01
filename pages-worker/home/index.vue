@@ -50,10 +50,11 @@
           </view>
         </view>
 
-        <view class="placeholder-card">
-          <view class="placeholder-title">后续功能</view>
-          <view class="placeholder-desc">
-            接单大厅、任务详情、进度凭证、收入结算将在下一阶段接入。
+        <view class="entry-grid">
+          <view v-for="item in entries" :key="item.url" class="entry-card" @tap="go(item.url)">
+            <view class="entry-icon">{{ item.icon }}</view>
+            <view class="entry-title">{{ item.title }}</view>
+            <view class="entry-desc">{{ item.desc }}</view>
           </view>
         </view>
 
@@ -80,6 +81,17 @@
   const userStore = sheep.$store('user');
   const deltaStore = sheep.$store('delta');
   const guardError = ref('');
+  const entries = [
+    { title: '接单大厅', desc: '查看并领取匹配服务单', icon: '抢', url: DeltaRoute.WORKER_POOL },
+    { title: '我的任务', desc: '执行服务与提交凭证', icon: '单', url: DeltaRoute.WORKER_ORDERS },
+    { title: '收入结算', desc: '查看结算状态和收入', icon: '收', url: DeltaRoute.WORKER_INCOME },
+    {
+      title: '消息通知',
+      desc: '查看 Delta 站内消息',
+      icon: '信',
+      url: DeltaRoute.DELTA_NOTIFICATIONS,
+    },
+  ];
 
   const identity = computed(() => deltaStore.identity || {});
   const profile = computed(() => deltaStore.profile || {});
@@ -127,6 +139,10 @@
     deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
   }
 
+  function go(url) {
+    sheep.$router.go(url);
+  }
+
   onShow(guardWorkerHome);
 </script>
 
@@ -140,7 +156,7 @@
 
   .hero,
   .status-card,
-  .placeholder-card,
+  .entry-card,
   .notice-card {
     border-radius: 18rpx;
     background: #ffffff;
@@ -179,7 +195,7 @@
 
   .hero-title,
   .notice-title,
-  .placeholder-title {
+  .entry-title {
     color: #17191f;
     font-size: 34rpx;
     line-height: 48rpx;
@@ -188,7 +204,7 @@
 
   .hero-subtitle,
   .notice-desc,
-  .placeholder-desc {
+  .entry-desc {
     margin-top: 8rpx;
     color: #8c929d;
     font-size: 25rpx;
@@ -196,10 +212,40 @@
   }
 
   .status-card,
-  .placeholder-card,
   .notice-card {
     margin-top: 22rpx;
     padding: 28rpx;
+  }
+
+  .entry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18rpx;
+    margin-top: 22rpx;
+  }
+  .entry-card {
+    padding: 26rpx;
+  }
+  .entry-icon {
+    width: 58rpx;
+    height: 58rpx;
+    border-radius: 16rpx;
+    color: #fff;
+    background: #e60012;
+    font-size: 24rpx;
+    line-height: 58rpx;
+    text-align: center;
+    font-weight: 800;
+  }
+  .entry-title {
+    margin-top: 18rpx;
+    font-size: 28rpx;
+    line-height: 40rpx;
+  }
+  .entry-desc {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    line-height: 32rpx;
   }
 
   .status-row {

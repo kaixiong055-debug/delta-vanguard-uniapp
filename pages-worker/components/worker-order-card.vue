@@ -1,29 +1,41 @@
 <template>
   <view class="worker-order-card" @tap="handleTap">
     <view class="card-head">
-      <view class="order-title ss-line-1">{{ title }}</view>
-      <view class="order-status">{{ statusText }}</view>
+      <view class="order-title ss-line-1">{{ order.productName || '服务任务' }}</view>
+      <view class="order-status">{{
+        order.statusName || getServiceOrderStatusText(order.status)
+      }}</view>
     </view>
-    <view class="order-meta" v-if="order.orderNo || order.serviceNo">
-      {{ order.orderNo || order.serviceNo }}
+    <view class="order-meta">服务单：{{ order.serviceOrderNo || '-' }}</view>
+    <view class="order-row">
+      <text class="label">类型</text>
+      <text class="value"
+        >{{ order.serviceTypeName || getServiceTypeText(order.serviceType) }} ·
+        {{ order.deviceTypeName || getDeviceTypeText(order.deviceType) }}</text
+      >
     </view>
-    <view class="order-row" v-if="order.serverName || order.gameServer">
-      <text class="label">区服</text>
-      <text class="value">{{ order.serverName || order.gameServer }}</text>
-    </view>
-    <view class="order-row" v-if="order.requirement || order.remark">
-      <text class="label">需求</text>
-      <text class="value ss-line-2">{{ order.requirement || order.remark }}</text>
+    <view class="order-row" v-if="order.skuName">
+      <text class="label">规格</text>
+      <text class="value ss-line-2">{{ order.skuName }}</text>
     </view>
     <view class="card-foot">
-      <view class="time-text">{{ order.createTime || order.startTime || '' }}</view>
+      <view>
+        <view class="amount-text">{{ formatDeltaAmount(order.serviceAmount) }}</view>
+        <view class="time-text">{{ formatDeltaTime(order.createTime) }}</view>
+      </view>
       <slot name="action" />
     </view>
   </view>
 </template>
 
 <script setup>
-  import { computed } from 'vue';
+  import {
+    formatDeltaAmount,
+    formatDeltaTime,
+    getDeviceTypeText,
+    getServiceOrderStatusText,
+    getServiceTypeText,
+  } from '@/sheep/helper/delta';
 
   const props = defineProps({
     order: {
@@ -33,11 +45,6 @@
   });
 
   const emits = defineEmits(['tap']);
-
-  const title = computed(
-    () => props.order.title || props.order.serviceName || props.order.goodsName || '服务任务',
-  );
-  const statusText = computed(() => props.order.statusText || props.order.statusName || '待处理');
 
   function handleTap() {
     emits('tap', props.order);
@@ -116,5 +123,11 @@
     color: #a7adb7;
     font-size: 22rpx;
     line-height: 32rpx;
+  }
+
+  .amount-text {
+    color: #e60012;
+    font-size: 28rpx;
+    font-weight: 800;
   }
 </style>

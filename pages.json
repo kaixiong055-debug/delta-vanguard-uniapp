@@ -781,6 +781,16 @@
           }
         },
         {
+          "path": "evidence/submit",
+          "style": { "navigationBarTitleText": "登记凭证" },
+          "meta": { "auth": true, "title": "登记凭证", "group": "Delta 打手端" }
+        },
+        {
+          "path": "completion/submit",
+          "style": { "navigationBarTitleText": "提交完成" },
+          "meta": { "auth": true, "title": "提交完成", "group": "Delta 打手端" }
+        },
+        {
           "path": "income/index",
           "style": {
             "navigationBarTitleText": "收入明细",
@@ -791,6 +801,11 @@
             "title": "收入明细",
             "group": "Delta 打手端"
           }
+        },
+        {
+          "path": "income/detail",
+          "style": { "navigationBarTitleText": "结算详情" },
+          "meta": { "auth": true, "title": "结算详情", "group": "Delta 打手端" }
         },
         {
           "path": "profile/index",
@@ -843,16 +858,74 @@
           }
         },
         {
-          "path": "service-order/select-worker",
-          "style": {
-            "navigationBarTitleText": "指派打手",
-            "enablePullDownRefresh": true
-          },
-          "meta": {
-            "auth": true,
-            "title": "指派打手",
-            "group": "Delta 服务"
-          }
+          "path": "service-order/progress",
+          "style": { "navigationBarTitleText": "履约进度" },
+          "meta": { "auth": true, "title": "履约进度", "group": "Delta 服务" }
+        },
+        {
+          "path": "service-order/evidence",
+          "style": { "navigationBarTitleText": "服务凭证" },
+          "meta": { "auth": true, "title": "服务凭证", "group": "Delta 服务" }
+        },
+        {
+          "path": "service-order/accept",
+          "style": { "navigationBarTitleText": "验收服务" },
+          "meta": { "auth": true, "title": "验收服务", "group": "Delta 服务" }
+        },
+        {
+          "path": "service-order/rework",
+          "style": { "navigationBarTitleText": "要求返工" },
+          "meta": { "auth": true, "title": "要求返工", "group": "Delta 服务" }
+        },
+        {
+          "path": "cancel/apply",
+          "style": { "navigationBarTitleText": "申请取消" },
+          "meta": { "auth": true, "title": "申请取消", "group": "Delta 服务" }
+        },
+        {
+          "path": "cancel/index",
+          "style": { "navigationBarTitleText": "取消申请", "enablePullDownRefresh": true },
+          "meta": { "auth": true, "title": "取消申请", "group": "Delta 服务" }
+        },
+        {
+          "path": "cancel/detail",
+          "style": { "navigationBarTitleText": "取消申请详情" },
+          "meta": { "auth": true, "title": "取消申请详情", "group": "Delta 服务" }
+        },
+        {
+          "path": "after-sale/apply",
+          "style": { "navigationBarTitleText": "申请售后" },
+          "meta": { "auth": true, "title": "申请售后", "group": "Delta 服务" }
+        },
+        {
+          "path": "after-sale/index",
+          "style": { "navigationBarTitleText": "售后记录", "enablePullDownRefresh": true },
+          "meta": { "auth": true, "title": "售后记录", "group": "Delta 服务" }
+        },
+        {
+          "path": "after-sale/detail",
+          "style": { "navigationBarTitleText": "售后详情" },
+          "meta": { "auth": true, "title": "售后详情", "group": "Delta 服务" }
+        },
+        {
+          "path": "refund/index",
+          "style": { "navigationBarTitleText": "退款记录", "enablePullDownRefresh": true },
+          "meta": { "auth": true, "title": "退款记录", "group": "Delta 服务" }
+        },
+        {
+          "path": "refund/detail",
+          "style": { "navigationBarTitleText": "退款详情" },
+          "meta": { "auth": true, "title": "退款详情", "group": "Delta 服务" }
+        },
+        {
+          "path": "notification/index",
+          "style": { "navigationBarTitleText": "消息通知", "enablePullDownRefresh": true },
+          "meta": { "auth": true, "title": "消息通知", "group": "Delta 服务" }
+        },
+        {
+          "path": "notification/detail",
+          "style": { "navigationBarTitleText": "通知详情" },
+          "meta": { "auth": true, "title": "通知详情", "group": "Delta 服务" }
         }
       ]
     }

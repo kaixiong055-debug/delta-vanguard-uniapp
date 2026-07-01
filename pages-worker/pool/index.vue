@@ -1,9 +1,25 @@
 <template>
   <s-layout title="接单大厅" :bgStyle="{ color: '#f4f6f8' }">
     <view class="worker-page">
+      <view class="filters">
+        <picker :range="serviceOptions" range-key="label" @change="changeServiceType">
+          <view class="filter-item">{{ serviceOptions[state.serviceIndex].label }}</view>
+        </picker>
+        <picker :range="deviceOptions" range-key="label" @change="changeDeviceType">
+          <view class="filter-item">{{ deviceOptions[state.deviceIndex].label }}</view>
+        </picker>
+      </view>
+      <view v-if="state.error" class="error-card"
+        >{{ state.error }}<text @tap="getList(true)">重试</text></view
+      >
       <worker-order-card v-for="item in state.list" :key="item.id" :order="item" @tap="goDetail">
         <template #action>
-          <button class="ss-reset-button card-btn" @tap.stop="takeOrder(item.id)">接单</button>
+          <button
+            class="ss-reset-button card-btn"
+            :disabled="claimingId === item.id"
+            @tap.stop="confirmClaim(item)"
+            >{{ claimingId === item.id ? '接单中' : '接单' }}</button
+          >
         </template>
       </worker-order-card>
       <s-empty v-if="!state.loading && state.list.length === 0" text="暂无可接服务单" />
@@ -14,12 +30,28 @@
 </template>
 
 <script setup>
-  import { reactive } from 'vue';
-  import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app';
+  import { reactive, ref } from 'vue';
+  import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import OrderPoolApi from '@/sheep/api/delta/orderPool';
   import WorkerTabbar from '../components/worker-tabbar.vue';
   import WorkerOrderCard from '../components/worker-order-card.vue';
+  import { DeltaRoute } from '@/sheep/helper/delta';
+
+  const deltaStore = sheep.$store('delta');
+  const claimingId = ref(null);
+  const serviceOptions = [
+    { label: '全部服务', value: undefined },
+    { label: '陪玩', value: 1 },
+    { label: '护航', value: 2 },
+    { label: '趣味单', value: 3 },
+  ];
+  const deviceOptions = [
+    { label: '全部设备', value: undefined },
+    { label: '手机', value: 1 },
+    { label: '平板', value: 2 },
+    { label: 'PC', value: 3 },
+  ];
 
   const state = reactive({
     list: [],
@@ -28,6 +60,9 @@
     pageSize: 10,
     loading: false,
     loadStatus: 'more',
+    serviceIndex: 0,
+    deviceIndex: 0,
+    error: '',
   });
 
   async function getList(reset = false) {
@@ -40,11 +75,14 @@
       state.loadStatus = 'more';
     }
     state.loading = true;
+    state.error = '';
     state.loadStatus = 'loading';
     const res = await OrderPoolApi.getPage(
       {
         pageNo: state.pageNo,
         pageSize: state.pageSize,
+        serviceType: serviceOptions[state.serviceIndex].value,
+        deviceType: deviceOptions[state.deviceIndex].value,
       },
       { showError: false },
     );
@@ -54,10 +92,21 @@
       state.list = reset ? list : state.list.concat(list);
       state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
     } else {
+      state.error = res?.msg || '加载失败，请重试';
+      if (!reset && state.pageNo > 1) state.pageNo--;
       state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
     }
     state.loading = false;
     uni.stopPullDownRefresh();
+  }
+
+  function changeServiceType(e) {
+    state.serviceIndex = Number(e.detail.value);
+    getList(true);
+  }
+  function changeDeviceType(e) {
+    state.deviceIndex = Number(e.detail.value);
+    getList(true);
   }
 
   function loadMore() {
@@ -72,14 +121,31 @@
     sheep.$router.go('/pages-worker/pool/detail', { id: order.id });
   }
 
-  async function takeOrder(id) {
-    const res = await OrderPoolApi.takeOrder(id);
-    if (res?.code === 0) {
-      getList(true);
-    }
+  function confirmClaim(item) {
+    if (claimingId.value) return;
+    uni.showModal({
+      title: '确认接单',
+      content: `确认领取服务单 ${item.serviceOrderNo || ''}？`,
+      success: ({ confirm }) => {
+        if (confirm) claimOrder(item.id);
+      },
+    });
   }
 
-  onLoad(() => getList(true));
+  async function claimOrder(id) {
+    if (claimingId.value) return;
+    claimingId.value = id;
+    const res = await OrderPoolApi.claimOrder(id);
+    if (res?.code === 0) {
+      await getList(true);
+      sheep.$router.go(DeltaRoute.WORKER_ORDERS);
+    }
+    claimingId.value = null;
+  }
+
+  onShow(async () => {
+    if (await deltaStore.guardWorkerPage()) getList(true);
+  });
   onPullDownRefresh(() => getList(true));
   onReachBottom(loadMore);
 </script>
@@ -101,5 +167,34 @@
     color: #ffffff;
     font-size: 24rpx;
     line-height: 52rpx;
+  }
+  .filters {
+    display: flex;
+    gap: 16rpx;
+    margin-bottom: 20rpx;
+  }
+  .filters picker {
+    flex: 1;
+  }
+  .filter-item {
+    height: 64rpx;
+    border-radius: 14rpx;
+    background: #fff;
+    color: #444;
+    font-size: 24rpx;
+    line-height: 64rpx;
+    text-align: center;
+  }
+  .error-card {
+    margin-bottom: 18rpx;
+    padding: 22rpx;
+    border-radius: 14rpx;
+    background: #fff;
+    color: #8c929d;
+    font-size: 24rpx;
+  }
+  .error-card text {
+    float: right;
+    color: #e60012;
   }
 </style>

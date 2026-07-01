@@ -186,6 +186,21 @@ const delta = defineStore('delta', {
       }
       return route;
     },
+    async guardWorkerPage() {
+      const res = await this.fetchWorkerIdentity({ force: true, showError: false });
+      if (res?.code !== 0 || !this.canEnterWorker || this.isBlocked) {
+        this.setAppMode(DeltaAppMode.SHOP);
+        uni.showToast({
+          title: this.identityError || this.statusInfo.desc || '当前无法进入打手模式',
+          icon: 'none',
+        });
+        $router.redirect(this.resolveWorkerRoute(this.identity));
+        return false;
+      }
+      this.setAppMode(DeltaAppMode.WORKER);
+      await this.fetchWorkerProfile({ showError: false, showLoading: false });
+      return true;
+    },
     exitWorkerMode(route = DeltaRoute.SHOP_USER) {
       this.setAppMode(DeltaAppMode.SHOP);
       $router.go(route);

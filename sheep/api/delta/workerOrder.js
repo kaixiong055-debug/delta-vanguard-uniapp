@@ -23,11 +23,11 @@ const WorkerOrderApi = {
       custom: withAuth(custom),
     });
   },
-  startOrder: (id) => {
+  startOrder: (serviceOrderId) => {
     return request({
       url: '/delta/worker-order/start',
       method: 'POST',
-      data: { id },
+      params: { serviceOrderId },
       custom: withAuth({
         showLoading: true,
         showSuccess: true,
@@ -35,11 +35,11 @@ const WorkerOrderApi = {
       }),
     });
   },
-  finishOrder: (id) => {
+  submitCompletion: (data) => {
     return request({
-      url: '/delta/worker-order/finish',
+      url: '/delta/worker-order/submit-completion',
       method: 'POST',
-      data: { id },
+      data,
       custom: withAuth({
         showLoading: true,
         showSuccess: true,
@@ -57,6 +57,46 @@ const WorkerOrderApi = {
         showSuccess: true,
         successMsg: '进度已提交',
       }),
+    });
+  },
+  getProgressList: (serviceOrderId, custom) => {
+    return request({
+      url: '/delta/worker-order/progress-list',
+      method: 'GET',
+      params: { serviceOrderId },
+      custom: withAuth(custom),
+    });
+  },
+  createEvidence: (data) => {
+    return request({
+      url: '/delta/worker-order/evidence',
+      method: 'POST',
+      data,
+      custom: withAuth({
+        showLoading: true,
+        showSuccess: true,
+        successMsg: '凭证已登记',
+      }),
+    });
+  },
+  deleteEvidence: (id) => {
+    return request({
+      url: '/delta/worker-order/evidence/delete',
+      method: 'DELETE',
+      params: { id },
+      custom: withAuth({
+        showLoading: true,
+        showSuccess: true,
+        successMsg: '凭证已删除',
+      }),
+    });
+  },
+  getEvidenceList: (serviceOrderId, custom) => {
+    return request({
+      url: '/delta/worker-order/evidence-list',
+      method: 'GET',
+      params: { serviceOrderId },
+      custom: withAuth(custom),
     });
   },
 };

@@ -12,7 +12,9 @@
           {{ item.label }}
         </view>
       </view>
-
+      <view v-if="state.error" class="error-card"
+        >{{ state.error }}<text @tap="getList(true)">重试</text></view
+      >
       <worker-order-card v-for="item in state.list" :key="item.id" :order="item" @tap="goDetail" />
       <s-empty v-if="!state.loading && state.list.length === 0" text="暂无任务" />
       <uni-load-more v-if="state.list.length > 0" :status="state.loadStatus" @tap="loadMore" />
@@ -23,27 +25,32 @@
 
 <script setup>
   import { reactive } from 'vue';
-  import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app';
+  import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import WorkerOrderApi from '@/sheep/api/delta/workerOrder';
   import WorkerTabbar from '../components/worker-tabbar.vue';
   import WorkerOrderCard from '../components/worker-order-card.vue';
+  import { ServiceOrderStatus } from '@/sheep/helper/delta';
+
+  const deltaStore = sheep.$store('delta');
 
   const tabs = [
-    { label: '全部', value: '' },
-    { label: '待开始', value: 'waiting' },
-    { label: '进行中', value: 'processing' },
-    { label: '已完成', value: 'finished' },
+    { label: '全部', value: undefined },
+    { label: '待开始', value: ServiceOrderStatus.ACCEPTED_PENDING_START },
+    { label: '进行中', value: ServiceOrderStatus.IN_PROGRESS },
+    { label: '待验收', value: ServiceOrderStatus.WORKER_SUBMITTED },
+    { label: '已完成', value: ServiceOrderStatus.COMPLETED },
   ];
 
   const state = reactive({
-    status: '',
+    status: undefined,
     list: [],
     total: 0,
     pageNo: 1,
     pageSize: 10,
     loading: false,
     loadStatus: 'more',
+    error: '',
   });
 
   async function getList(reset = false) {
@@ -56,12 +63,13 @@
       state.loadStatus = 'more';
     }
     state.loading = true;
+    state.error = '';
     state.loadStatus = 'loading';
     const res = await WorkerOrderApi.getPage(
       {
         pageNo: state.pageNo,
         pageSize: state.pageSize,
-        status: state.status || undefined,
+        status: state.status,
       },
       { showError: false },
     );
@@ -71,6 +79,8 @@
       state.list = reset ? list : state.list.concat(list);
       state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
     } else {
+      state.error = res?.msg || '任务加载失败';
+      if (!reset && state.pageNo > 1) state.pageNo--;
       state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
     }
     state.loading = false;
@@ -94,7 +104,9 @@
     sheep.$router.go('/pages-worker/order/detail', { id: order.id });
   }
 
-  onLoad(() => getList(true));
+  onShow(async () => {
+    if (await deltaStore.guardWorkerPage()) getList(true);
+  });
   onPullDownRefresh(() => getList(true));
   onReachBottom(loadMore);
 </script>
@@ -130,5 +142,23 @@
     color: #ffffff;
     background: #e60012;
     font-weight: 800;
+  }
+  .tabs {
+    overflow-x: auto;
+  }
+  .tab {
+    min-width: 120rpx;
+  }
+  .error-card {
+    margin-bottom: 18rpx;
+    padding: 22rpx;
+    border-radius: 14rpx;
+    background: #fff;
+    color: #8c929d;
+    font-size: 24rpx;
+  }
+  .error-card text {
+    float: right;
+    color: #e60012;
   }
 </style>
