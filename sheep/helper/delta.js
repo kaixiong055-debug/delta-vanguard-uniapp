@@ -3,6 +3,20 @@ export const DELTA_APP_MODE_KEY = 'delta_app_mode';
 export const DeltaAppMode = {
   SHOP: 'shop',
   WORKER: 'worker',
+  CLUB: 'club',
+};
+
+export const DeltaClubApplicationStatus = {
+  NOT_APPLIED: -1,
+  PENDING: 0,
+  APPROVED: 1,
+  REJECTED: 2,
+  CANCELED: 3,
+};
+
+export const DeltaClubBusinessStatus = {
+  DISABLED: 0,
+  ENABLED: 1,
 };
 
 export const DeltaAuditStatus = {
@@ -36,6 +50,12 @@ export const DeltaRoute = {
   DELTA_AFTER_SALES: '/pages-delta/after-sale/index',
   DELTA_REFUNDS: '/pages-delta/refund/index',
   DELTA_NOTIFICATIONS: '/pages-delta/notification/index',
+  CLUB_APPLY: '/pages-delta/club/apply/index',
+  CLUB_APPLY_STATUS: '/pages-delta/club/apply/status',
+  CLUB_HOME: '/pages-delta/club/home/index',
+  CLUB_MARKET: '/pages-delta/club/market/index',
+  CLUB_MARKET_DETAIL: '/pages-delta/club/market/detail',
+  CLUB_CLAIMED: '/pages-delta/club/claimed/index',
 };
 
 export const ServiceOrderStatus = {
@@ -94,6 +114,83 @@ export function formatDeltaAmount(amount) {
 
 export function formatDeltaTime(value) {
   return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
+}
+
+export function getClubApplicationStatusInfo(identity = {}) {
+  let info;
+  if (identity.hasApplication !== true) {
+    info = {
+      status: DeltaClubApplicationStatus.NOT_APPLIED,
+      title: '未申请',
+      entryText: '申请入驻',
+      desc: '提交资料后等待平台审核',
+    };
+  } else {
+    const status = Number(identity.applicationStatus);
+    const statusMap = {
+      [DeltaClubApplicationStatus.PENDING]: {
+        status,
+        title: '待审核',
+        entryText: '查看审核',
+        desc: '平台正在审核你的入驻申请',
+      },
+      [DeltaClubApplicationStatus.APPROVED]: {
+        status,
+        title: '已通过',
+        entryText: '查看审核',
+        desc: '审核已通过，俱乐部资料正在生成',
+      },
+      [DeltaClubApplicationStatus.REJECTED]: {
+        status,
+        title: '已拒绝',
+        entryText: '查看原因',
+        desc: identity.rejectReason || '可根据审核意见重新提交申请',
+      },
+      [DeltaClubApplicationStatus.CANCELED]: {
+        status,
+        title: '已撤销',
+        entryText: '重新申请',
+        desc: '本次申请已撤销，可重新提交资料',
+      },
+    };
+    info = statusMap[status] || {
+      status,
+      title: identity.applicationStatusName || '申请状态未知',
+      entryText: '查看审核',
+      desc: '请查看最新审核状态',
+    };
+  }
+  if (identity.isClubOwner === true) {
+    return {
+      ...info,
+      entryText:
+        Number(identity.businessStatus) === DeltaClubBusinessStatus.ENABLED
+          ? '进入俱乐部'
+          : '查看俱乐部',
+      desc:
+        Number(identity.businessStatus) === DeltaClubBusinessStatus.ENABLED
+          ? '管理俱乐部并查看平台挂牌'
+          : '当前俱乐部已停用',
+    };
+  }
+  return info;
+}
+
+export function getClubBusinessStatusText(status) {
+  if (Number(status) === DeltaClubBusinessStatus.ENABLED) return '启用';
+  if (Number(status) === DeltaClubBusinessStatus.DISABLED) return '停用';
+  return '-';
+}
+
+export function getEnabledClubServiceScopes(identity = {}) {
+  const scopes = Array.isArray(identity.serviceScopes) ? identity.serviceScopes : [];
+  return scopes.filter((scope) => scope.enabled === true || Number(scope.enabled) === 1);
+}
+
+export function formatCommissionRate(rate) {
+  if (rate === null || rate === undefined || rate === '') return '-';
+  const value = Number(rate);
+  return Number.isFinite(value) ? `${(value / 100).toFixed(2)}%` : '-';
 }
 
 export const workerStatusMap = {

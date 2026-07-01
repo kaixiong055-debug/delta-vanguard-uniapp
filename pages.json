@@ -926,6 +926,45 @@
           "path": "notification/detail",
           "style": { "navigationBarTitleText": "通知详情" },
           "meta": { "auth": true, "title": "通知详情", "group": "Delta 服务" }
+        },
+        {
+          "path": "club/apply/index",
+          "style": { "navigationBarTitleText": "俱乐部入驻" },
+          "meta": { "auth": true, "title": "俱乐部入驻", "group": "Delta 俱乐部" }
+        },
+        {
+          "path": "club/apply/status",
+          "style": { "navigationBarTitleText": "申请状态" },
+          "meta": { "auth": true, "title": "申请状态", "group": "Delta 俱乐部" }
+        },
+        {
+          "path": "club/home/index",
+          "style": {
+            "navigationBarTitleText": "俱乐部中心",
+            "enablePullDownRefresh": true
+          },
+          "meta": { "auth": true, "title": "俱乐部中心", "group": "Delta 俱乐部" }
+        },
+        {
+          "path": "club/market/index",
+          "style": {
+            "navigationBarTitleText": "可抢挂牌",
+            "enablePullDownRefresh": true
+          },
+          "meta": { "auth": true, "title": "可抢挂牌", "group": "Delta 俱乐部" }
+        },
+        {
+          "path": "club/market/detail",
+          "style": { "navigationBarTitleText": "挂牌详情" },
+          "meta": { "auth": true, "title": "挂牌详情", "group": "Delta 俱乐部" }
+        },
+        {
+          "path": "club/claimed/index",
+          "style": {
+            "navigationBarTitleText": "我的已接挂牌",
+            "enablePullDownRefresh": true
+          },
+          "meta": { "auth": true, "title": "我的已接挂牌", "group": "Delta 俱乐部" }
         }
       ]
     }

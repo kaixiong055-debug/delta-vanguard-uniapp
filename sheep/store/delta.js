@@ -1,13 +1,19 @@
 import { defineStore } from 'pinia';
 import WorkerApi from '@/sheep/api/delta/worker';
+import ClubApi from '@/sheep/api/delta/club';
 import $router from '@/sheep/router';
+import userStore from '@/sheep/store/user';
 import {
   DELTA_APP_MODE_KEY,
   DeltaAppMode,
   DeltaAuditStatus,
+  DeltaClubApplicationStatus,
+  DeltaClubBusinessStatus,
   DeltaRoute,
   DeltaWorkStatus,
   getWorkerStatusInfo,
+  getClubApplicationStatusInfo,
+  getEnabledClubServiceScopes,
   getWorkStatusText,
   isApprovedWorker,
   isBlockedWorker,
@@ -27,6 +33,14 @@ const delta = defineStore('delta', {
     lastIdentityFetchTime: 0,
     identityPromise: null,
 
+    clubIdentity: null,
+    clubApplication: null,
+    clubIdentityLoading: false,
+    clubIdentityLoaded: false,
+    clubIdentityError: '',
+    clubIdentityPromise: null,
+    lastClubIdentityFetchTime: 0,
+
     workerProfile: null,
     applyStatus: null,
     online: false,
@@ -39,10 +53,23 @@ const delta = defineStore('delta', {
       ),
     canEnterWorker: (state) => isApprovedWorker(state.identity || {}),
     isBlocked: (state) => isBlockedWorker(state.identity || {}),
+    clubStatusInfo: (state) => getClubApplicationStatusInfo(state.clubIdentity || {}),
+    isClubOwner: (state) => state.clubIdentity?.isClubOwner === true,
+    clubBusinessEnabled: (state) =>
+      Number(state.clubIdentity?.businessStatus) === DeltaClubBusinessStatus.ENABLED,
+    enabledClubServiceScopes: (state) => getEnabledClubServiceScopes(state.clubIdentity || {}),
+    hasEnabledClubServiceScope: (state) =>
+      getEnabledClubServiceScopes(state.clubIdentity || {}).length > 0,
+    canEnterClub: (state) => state.clubIdentity?.isClubOwner === true,
+    canUseClubMarket: (state) =>
+      state.clubIdentity?.isClubOwner === true &&
+      state.clubIdentity?.canUseOrderMarket === true &&
+      Number(state.clubIdentity?.businessStatus) === DeltaClubBusinessStatus.ENABLED,
   },
   actions: {
     setAppMode(mode = DeltaAppMode.SHOP) {
-      const nextMode = mode === DeltaAppMode.WORKER ? DeltaAppMode.WORKER : DeltaAppMode.SHOP;
+      const allowedModes = [DeltaAppMode.SHOP, DeltaAppMode.WORKER, DeltaAppMode.CLUB];
+      const nextMode = allowedModes.includes(mode) ? mode : DeltaAppMode.SHOP;
       this.currentMode = nextMode;
       uni.setStorageSync(DELTA_APP_MODE_KEY, nextMode);
     },
@@ -220,6 +247,152 @@ const delta = defineStore('delta', {
       this.setAppMode(DeltaAppMode.SHOP);
     },
 
+    async fetchClubIdentity(options = {}) {
+      const { force = false, showError = false } = options;
+      const now = Date.now();
+      if (
+        !force &&
+        this.clubIdentityLoaded &&
+        now - this.lastClubIdentityFetchTime < identityThrottleTime
+      ) {
+        return { code: 0, data: this.clubIdentity };
+      }
+      if (this.clubIdentityPromise) return this.clubIdentityPromise;
+      this.clubIdentityLoading = true;
+      this.clubIdentityError = '';
+      this.clubIdentityPromise = ClubApi.getIdentity({ showError, showLoading: false })
+        .then((res) => {
+          if (res?.code === 0) {
+            this.clubIdentity = res.data || null;
+            this.clubIdentityLoaded = true;
+            this.lastClubIdentityFetchTime = Date.now();
+          } else {
+            this.clubIdentityError = res?.msg || '俱乐部身份查询失败';
+          }
+          return res;
+        })
+        .catch((error) => {
+          this.clubIdentityError = error?.msg || error?.message || '俱乐部身份查询失败';
+          return false;
+        })
+        .finally(() => {
+          this.clubIdentityLoading = false;
+          this.clubIdentityPromise = null;
+        });
+      return this.clubIdentityPromise;
+    },
+    async fetchClubApplication(custom = {}) {
+      try {
+        const res = await ClubApi.getApplication({
+          showError: false,
+          showLoading: false,
+          ...custom,
+        });
+        if (res?.code === 0) this.clubApplication = res.data || null;
+        return res;
+      } catch (error) {
+        return { code: -1, msg: error?.msg || error?.message || '申请详情查询失败' };
+      }
+    },
+    async submitClubApplication(data) {
+      const res = await ClubApi.submitApplication(data);
+      if (res?.code === 0) {
+        await this.fetchClubIdentity({ force: true, showError: false });
+        await this.fetchClubApplication({ showError: false });
+      }
+      return res;
+    },
+    async cancelClubApplication() {
+      const res = await ClubApi.cancelApplication({ showError: false, showLoading: false });
+      if (res?.code === 0) {
+        await this.fetchClubIdentity({ force: true, showError: false });
+        await this.fetchClubApplication({ showError: false });
+      }
+      return res;
+    },
+    resolveClubRoute(identity = this.clubIdentity) {
+      if (identity?.isClubOwner === true) return DeltaRoute.CLUB_HOME;
+      if (identity?.hasApplication !== true) return DeltaRoute.CLUB_APPLY;
+      const status = Number(identity?.applicationStatus);
+      if (
+        status === DeltaClubApplicationStatus.PENDING ||
+        status === DeltaClubApplicationStatus.APPROVED ||
+        status === DeltaClubApplicationStatus.REJECTED ||
+        status === DeltaClubApplicationStatus.CANCELED
+      ) {
+        return DeltaRoute.CLUB_APPLY_STATUS;
+      }
+      return DeltaRoute.CLUB_APPLY_STATUS;
+    },
+    async enterClubMode(options = {}) {
+      const { redirect = true } = options;
+      const res = await this.fetchClubIdentity({ force: true, showError: false });
+      if (res?.code !== 0) {
+        uni.showToast({
+          title: this.clubIdentityError || '身份查询失败，请稍后重试',
+          icon: 'none',
+        });
+        return false;
+      }
+      const route = this.resolveClubRoute(this.clubIdentity);
+      if (!this.isClubOwner) {
+        if (redirect) $router.redirect(route);
+        return route;
+      }
+      this.setAppMode(DeltaAppMode.CLUB);
+      if (redirect) $router.redirect(DeltaRoute.CLUB_HOME);
+      return DeltaRoute.CLUB_HOME;
+    },
+    async guardClubOwnerPage() {
+      if (!userStore().isLogin) {
+        uni.showToast({ title: '请先登录', icon: 'none' });
+        return false;
+      }
+      const res = await this.fetchClubIdentity({ force: true, showError: false });
+      if (res?.code !== 0) {
+        uni.showToast({
+          title: this.clubIdentityError || '身份查询失败，请稍后重试',
+          icon: 'none',
+        });
+        return false;
+      }
+      if (!this.isClubOwner) {
+        $router.redirect(this.resolveClubRoute(this.clubIdentity));
+        return false;
+      }
+      this.setAppMode(DeltaAppMode.CLUB);
+      return true;
+    },
+    async guardClubMarketPage(options = {}) {
+      const { requireServiceScope = true } = options;
+      if (!(await this.guardClubOwnerPage())) return false;
+      if (!this.canUseClubMarket) {
+        uni.showToast({ title: '当前俱乐部已停用，暂不能进入订单市场', icon: 'none' });
+        $router.redirect(DeltaRoute.CLUB_HOME);
+        return false;
+      }
+      if (requireServiceScope && !this.hasEnabledClubServiceScope) {
+        uni.showToast({ title: '当前未配置可经营服务范围，请联系平台管理员', icon: 'none' });
+        $router.redirect(DeltaRoute.CLUB_HOME);
+        return false;
+      }
+      return true;
+    },
+    exitClubMode(route = DeltaRoute.SHOP_USER) {
+      this.setAppMode(DeltaAppMode.SHOP);
+      $router.go(route);
+    },
+    clearClubState() {
+      this.clubIdentity = null;
+      this.clubApplication = null;
+      this.clubIdentityLoading = false;
+      this.clubIdentityLoaded = false;
+      this.clubIdentityError = '';
+      this.clubIdentityPromise = null;
+      this.lastClubIdentityFetchTime = 0;
+      this.setAppMode(DeltaAppMode.SHOP);
+    },
+
     loadWorkerProfile(custom) {
       return this.fetchWorkerProfile(custom);
     },
@@ -231,6 +404,7 @@ const delta = defineStore('delta', {
     },
     clearDeltaData() {
       this.clearWorkerState();
+      this.clearClubState();
     },
   },
   persist: {

@@ -16,6 +16,7 @@
       <s-block-item :type="item.id" :data="item.property" :styles="item.property.style" />
     </s-block>
     <delta-service-entry />
+    <delta-club-entry />
     <delta-worker-entry />
   </s-layout>
 </template>
@@ -26,6 +27,7 @@
   import sheep from '@/sheep';
   import DeltaWorkerEntry from './components/delta-worker-entry.vue';
   import DeltaServiceEntry from './components/delta-service-entry.vue';
+  import DeltaClubEntry from './components/delta-club-entry.vue';
 
   // 隐藏原生tabBar
   uni.hideTabBar({
