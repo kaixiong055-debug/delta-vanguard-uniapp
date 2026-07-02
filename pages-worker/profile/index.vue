@@ -108,8 +108,19 @@
         return;
       }
 
-      if (!deltaStore.profile || typeof deltaStore.profile !== 'object') {
-        error.value = '打手资料加载失败';
+      const profileRes = await deltaStore.fetchWorkerProfile({
+        showError: false,
+        showLoading: false,
+      });
+
+      if (
+        profileRes?.code !== 0 ||
+        !profileRes.data ||
+        typeof profileRes.data !== 'object' ||
+        Array.isArray(profileRes.data)
+      ) {
+        pageReady.value = false;
+        error.value = profileRes?.msg || '打手资料加载失败';
         return;
       }
 

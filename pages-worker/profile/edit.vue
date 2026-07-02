@@ -55,7 +55,6 @@
   import { onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import test from '@/sheep/helper/test';
-  import { DeltaRoute } from '@/sheep/helper/delta';
 
   const deltaStore = sheep.$store('delta');
 
