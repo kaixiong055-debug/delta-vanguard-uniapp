@@ -152,9 +152,7 @@
     id.value = normalizeLongId(options.id);
   });
 
-  onShow(() => {
-    if (id.value) load();
-  });
+  onShow(load);
 
   onPullDownRefresh(load);
 </script>
