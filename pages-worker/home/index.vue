@@ -4,10 +4,12 @@
       <view v-if="guardError" class="notice-card">
         <view class="notice-title">身份校验失败</view>
         <view class="notice-desc">{{ guardError }}</view>
-        <button class="ss-reset-button retry-btn" @tap="loadHome">重试</button>
+        <button class="ss-reset-button retry-btn" :disabled="homeLoading" @tap="loadHome">
+          {{ homeLoading ? '加载中' : '重试' }}
+        </button>
       </view>
 
-      <block v-else>
+      <block v-else-if="pageReady">
         <view class="hero">
           <view class="avatar">
             <image
@@ -48,7 +50,7 @@
               :class="{
                 active: currentWorkStatus === DeltaWorkStatus.ONLINE,
               }"
-              :disabled="isBusy || workStatusUpdating"
+              :disabled="!pageReady || homeLoading || isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.ONLINE)"
             >
               设为在线
@@ -58,7 +60,7 @@
               :class="{
                 active: currentWorkStatus === DeltaWorkStatus.OFFLINE,
               }"
-              :disabled="isBusy || workStatusUpdating"
+              :disabled="!pageReady || homeLoading || isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.OFFLINE)"
             >
               设为离线
@@ -68,7 +70,7 @@
               :class="{
                 active: currentWorkStatus === DeltaWorkStatus.PAUSED,
               }"
-              :disabled="isBusy || workStatusUpdating"
+              :disabled="!pageReady || homeLoading || isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.PAUSED)"
             >
               暂停接单
@@ -153,8 +155,6 @@
   import WorkerOrderApi from '@/sheep/api/delta/workerOrder';
   import WorkerTabbar from '../components/worker-tabbar.vue';
   import {
-    DeltaAppMode,
-    DeltaAuditStatus,
     DeltaRoute,
     DeltaWorkStatus,
     ServiceOrderStatus,
@@ -165,6 +165,8 @@
   const userStore = sheep.$store('user');
   const deltaStore = sheep.$store('delta');
   const guardError = ref('');
+  const homeLoading = ref(false);
+  const pageReady = ref(false);
   const priorityOrder = ref({});
   const notificationUnreadCount = ref(0);
 
@@ -225,16 +227,39 @@
     return count > 99 ? '99+' : String(count);
   });
 
+  function normalizeCount(value) {
+    const count = Number(value);
+
+    if (!Number.isSafeInteger(count) || count < 0) {
+      return 0;
+    }
+
+    return count;
+  }
+
+  function resetTaskOverview() {
+    taskStats.pendingStart = 0;
+    taskStats.inProgress = 0;
+    taskStats.waitingAccept = 0;
+    priorityOrder.value = {};
+  }
+
   async function loadNotificationUnreadCount() {
     try {
       const res = await NotificationApi.getUnreadCount({
         showError: false,
         showLoading: false,
       });
-      notificationUnreadCount.value = res?.code === 0 ? Number(res.data || 0) : 0;
+      notificationUnreadCount.value = res?.code === 0 ? normalizeCount(res.data) : 0;
     } catch {
       notificationUnreadCount.value = 0;
     }
+  }
+
+  function firstRecord(res) {
+    const item = Array.isArray(res?.data?.list) ? res.data.list[0] : null;
+
+    return item && typeof item === 'object' && !Array.isArray(item) ? item : null;
   }
 
   async function loadTaskOverview() {
@@ -261,69 +286,73 @@
 
       const invalidResult = results.find((res) => res?.code !== 0);
       if (invalidResult) {
+        resetTaskOverview();
         taskStats.error = invalidResult?.msg || '任务概览加载失败';
         return;
       }
 
       const [pendingRes, progressRes, submittedRes] = results;
-      taskStats.pendingStart = Number(pendingRes.data?.total || 0);
-      taskStats.inProgress = Number(progressRes.data?.total || 0);
-      taskStats.waitingAccept = Number(submittedRes.data?.total || 0);
+      taskStats.pendingStart = normalizeCount(pendingRes.data?.total);
+      taskStats.inProgress = normalizeCount(progressRes.data?.total);
+      taskStats.waitingAccept = normalizeCount(submittedRes.data?.total);
 
-      const first = (res) => (Array.isArray(res.data?.list) ? res.data.list[0] : null);
-      priorityOrder.value = first(progressRes) || first(pendingRes) || first(submittedRes) || {};
-    } catch (error) {
-      taskStats.error = error?.msg || error?.message || '任务概览加载失败';
-      priorityOrder.value = {};
+      priorityOrder.value =
+        firstRecord(progressRes) || firstRecord(pendingRes) || firstRecord(submittedRes) || {};
+    } catch (loadError) {
+      resetTaskOverview();
+      taskStats.error = loadError?.msg || loadError?.message || '任务概览加载失败';
     } finally {
       taskStats.loading = false;
     }
   }
 
   async function loadHome() {
+    if (homeLoading.value) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    homeLoading.value = true;
+    pageReady.value = false;
     guardError.value = '';
 
-    if (!userStore.isLogin) {
-      showAuthModal();
-      deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
-      uni.stopPullDownRefresh();
-      return;
-    }
+    try {
+      if (!userStore.isLogin) {
+        showAuthModal();
+        deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
+        return;
+      }
 
-    const res = await deltaStore.fetchWorkerIdentity({ force: true, showError: false });
-    if (res?.code !== 0) {
-      guardError.value = deltaStore.identityError || '请稍后重试';
-      uni.stopPullDownRefresh();
-      return;
-    }
+      const allowed = await deltaStore.guardWorkerPage();
 
-    const status = Number(
-      deltaStore.identity?.auditStatus ?? deltaStore.identity?.applicationStatus,
-    );
+      if (!allowed) {
+        return;
+      }
 
-    if (status === DeltaAuditStatus.DISABLED || status === DeltaAuditStatus.BLACKLISTED) {
-      uni.showToast({
-        title: deltaStore.statusInfo.desc,
-        icon: 'none',
+      const profileRes = await deltaStore.fetchWorkerProfile({
+        showError: false,
+        showLoading: false,
       });
-      deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
-      uni.stopPullDownRefresh();
-      return;
-    }
 
-    if (!deltaStore.canEnterWorker) {
-      sheep.$router.redirect(deltaStore.resolveWorkerRoute(deltaStore.identity));
-      uni.stopPullDownRefresh();
-      return;
-    }
+      if (
+        profileRes?.code !== 0 ||
+        !profileRes.data ||
+        typeof profileRes.data !== 'object' ||
+        Array.isArray(profileRes.data)
+      ) {
+        guardError.value = profileRes?.msg || '打手资料加载失败';
+        return;
+      }
 
-    deltaStore.setAppMode(DeltaAppMode.WORKER);
-    await Promise.all([
-      deltaStore.fetchWorkerProfile({ showError: false }),
-      loadTaskOverview(),
-      loadNotificationUnreadCount(),
-    ]);
-    uni.stopPullDownRefresh();
+      await Promise.all([loadTaskOverview(), loadNotificationUnreadCount()]);
+
+      pageReady.value = true;
+    } catch (loadError) {
+      guardError.value = loadError?.msg || loadError?.message || '工作台加载失败，请重试';
+    } finally {
+      homeLoading.value = false;
+      uni.stopPullDownRefresh();
+    }
   }
 
   function normalizeManualWorkStatus(value) {
@@ -333,7 +362,9 @@
   }
 
   async function setWorkStatus(workStatus) {
-    if (workStatusUpdating.value) return;
+    if (!pageReady.value || homeLoading.value || workStatusUpdating.value) {
+      return;
+    }
 
     const normalizedStatus = normalizeManualWorkStatus(workStatus);
 
@@ -384,15 +415,27 @@
   }
 
   function go(url) {
+    if (!pageReady.value || homeLoading.value) {
+      return;
+    }
+
     sheep.$router.go(url);
   }
 
   function goOrders(status) {
+    if (!pageReady.value || homeLoading.value) {
+      return;
+    }
+
     const params = status === undefined ? {} : { status };
     sheep.$router.go(DeltaRoute.WORKER_ORDERS, params);
   }
 
   function goOrderDetail(order) {
+    if (!pageReady.value || homeLoading.value) {
+      return;
+    }
+
     if (!order?.id) return;
     sheep.$router.go('/pages-worker/order/detail', { id: order.id });
   }

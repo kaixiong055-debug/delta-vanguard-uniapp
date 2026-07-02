@@ -1,25 +1,48 @@
 <template>
   <s-layout title="申请状态" :bgStyle="{ color: '#f4f6f8' }">
     <view class="status-page">
-      <view class="status-card">
-        <view class="status-badge">{{ statusTitle }}</view>
-        <view class="status-title">{{ mainTitle }}</view>
-        <view class="status-desc">{{ statusDesc }}</view>
-        <view v-if="rejectReason" class="reason-box">
-          <view class="reason-label">驳回原因</view>
-          <view class="reason-text">{{ rejectReason }}</view>
-        </view>
+      <view v-if="error" class="error-card">
+        <text>{{ error }}</text>
+        <text class="retry" @tap="refresh">重试</text>
       </view>
 
-      <view class="action-list">
-        <button v-if="showApplyButton" class="ss-reset-button submit-btn" @tap="goApply">
-          {{ isRejected ? '重新提交申请' : '提交申请' }}
-        </button>
-        <button v-if="showEnterButton" class="ss-reset-button submit-btn" @tap="enterWorker">
-          进入打手工作台
-        </button>
-        <button class="ss-reset-button ghost-btn" @tap="refresh">刷新状态</button>
-      </view>
+      <template v-if="pageReady">
+        <view class="status-card">
+          <view class="status-badge">{{ statusTitle }}</view>
+          <view class="status-title">{{ mainTitle }}</view>
+          <view class="status-desc">{{ statusDesc }}</view>
+          <view v-if="rejectReason" class="reason-box">
+            <view class="reason-label">驳回原因</view>
+            <view class="reason-text">{{ rejectReason }}</view>
+          </view>
+        </view>
+
+        <view class="action-list">
+          <button
+            v-if="showApplyButton"
+            class="ss-reset-button submit-btn"
+            :disabled="loading || actionLoading"
+            @tap="goApply"
+          >
+            {{ isRejected ? '重新提交申请' : '提交申请' }}
+          </button>
+          <button
+            v-if="showEnterButton"
+            class="ss-reset-button submit-btn"
+            :disabled="loading || actionLoading"
+            @tap="enterWorker"
+          >
+            进入打手工作台
+          </button>
+          <button
+            class="ss-reset-button ghost-btn"
+            :disabled="loading || actionLoading"
+            @tap="refresh"
+          >
+            刷新状态
+          </button>
+        </view>
+      </template>
     </view>
   </s-layout>
 </template>
@@ -31,7 +54,23 @@
   import { DeltaAuditStatus, DeltaRoute, getWorkerStatusInfo } from '@/sheep/helper/delta';
 
   const deltaStore = sheep.$store('delta');
+
   const loading = ref(false);
+  const actionLoading = ref(false);
+  const error = ref('');
+  const pageReady = ref(false);
+
+  const validAuditStatuses = Object.values(DeltaAuditStatus);
+
+  function normalizeAuditStatus(value) {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const status = Number(value);
+
+    return validAuditStatuses.includes(status) ? status : null;
+  }
 
   const identityStatus = computed(() => Number(deltaStore.identity?.auditStatus));
   const applicationStatus = computed(() =>
@@ -40,35 +79,35 @@
     ),
   );
   const normalizedStatus = computed(() => {
+    const identityVal = normalizeAuditStatus(deltaStore.identity?.auditStatus);
+
     if (
-      identityStatus.value === DeltaAuditStatus.APPROVED ||
-      identityStatus.value === DeltaAuditStatus.DISABLED ||
-      identityStatus.value === DeltaAuditStatus.BLACKLISTED
+      identityVal === DeltaAuditStatus.APPROVED ||
+      identityVal === DeltaAuditStatus.DISABLED ||
+      identityVal === DeltaAuditStatus.BLACKLISTED
     ) {
-      return identityStatus.value;
+      return identityVal;
     }
-    return applicationStatus.value;
+
+    return (
+      normalizeAuditStatus(
+        deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus,
+      ) ?? DeltaAuditStatus.NOT_APPLIED
+    );
   });
+
   const statusInfo = computed(() => getWorkerStatusInfo({ auditStatus: normalizedStatus.value }));
   const statusTitle = computed(() => statusInfo.value.title);
-  const rejectReason = computed(
-    () => deltaStore.application?.rejectReason || deltaStore.identity?.rejectReason || '',
+  const rejectReason = computed(() =>
+    String(deltaStore.application?.rejectReason || deltaStore.identity?.rejectReason || '').trim(),
   );
   const isRejected = computed(() => normalizedStatus.value === DeltaAuditStatus.REJECTED);
-  const showApplyButton = computed(
-    () =>
-      !deltaStore.identityError &&
-      (normalizedStatus.value === DeltaAuditStatus.NOT_APPLIED ||
-        normalizedStatus.value === DeltaAuditStatus.REJECTED),
+  const showApplyButton = computed(() =>
+    [DeltaAuditStatus.NOT_APPLIED, DeltaAuditStatus.REJECTED].includes(normalizedStatus.value),
   );
-  const showEnterButton = computed(
-    () => !deltaStore.identityError && normalizedStatus.value === DeltaAuditStatus.APPROVED,
-  );
+  const showEnterButton = computed(() => normalizedStatus.value === DeltaAuditStatus.APPROVED);
 
   const mainTitle = computed(() => {
-    if (deltaStore.identityError) {
-      return '身份查询失败';
-    }
     if (normalizedStatus.value === DeltaAuditStatus.PENDING) {
       return '申请已提交';
     }
@@ -76,9 +115,6 @@
   });
 
   const statusDesc = computed(() => {
-    if (deltaStore.identityError) {
-      return deltaStore.identityError;
-    }
     if (normalizedStatus.value === DeltaAuditStatus.PENDING) {
       return '平台正在审核，请耐心等待。';
     }
@@ -95,23 +131,103 @@
   });
 
   async function refresh() {
-    if (loading.value) {
-      return;
-    }
+    if (loading.value) return false;
+
     loading.value = true;
-    const identityRes = await deltaStore.fetchWorkerIdentity({ force: true, showError: false });
-    if (identityRes?.code === 0) {
-      await deltaStore.fetchWorkerApplication({ showError: false });
+    error.value = '';
+    pageReady.value = false;
+
+    try {
+      const identityRes = await deltaStore.fetchWorkerIdentity({
+        force: true,
+        showError: false,
+      });
+
+      if (identityRes?.code !== 0) {
+        error.value = identityRes?.msg || deltaStore.identityError || '身份查询失败，请稍后重试';
+        return false;
+      }
+
+      const identityStatusVal = normalizeAuditStatus(identityRes?.data?.auditStatus);
+
+      const identityAuthoritative = [
+        DeltaAuditStatus.APPROVED,
+        DeltaAuditStatus.DISABLED,
+        DeltaAuditStatus.BLACKLISTED,
+      ].includes(identityStatusVal);
+
+      if (!identityAuthoritative) {
+        const applicationRes = await deltaStore.fetchWorkerApplication({
+          showError: false,
+          showLoading: false,
+        });
+
+        if (applicationRes?.code !== 0) {
+          error.value = applicationRes?.msg || '申请状态查询失败，请重试';
+          return false;
+        }
+      }
+
+      const status = normalizedStatus.value;
+
+      if (!validAuditStatuses.includes(status)) {
+        error.value = '申请状态异常，请刷新重试';
+        return false;
+      }
+
+      pageReady.value = true;
+      return true;
+    } catch (loadError) {
+      error.value = loadError?.msg || loadError?.message || '申请状态查询失败，请重试';
+      return false;
+    } finally {
+      loading.value = false;
     }
-    loading.value = false;
   }
 
-  function goApply() {
-    sheep.$router.go(DeltaRoute.WORKER_APPLY);
+  async function goApply() {
+    if (loading.value || actionLoading.value) {
+      return;
+    }
+
+    actionLoading.value = true;
+
+    try {
+      const refreshed = await refresh();
+
+      if (!refreshed) return;
+
+      if (
+        [DeltaAuditStatus.NOT_APPLIED, DeltaAuditStatus.REJECTED].includes(normalizedStatus.value)
+      ) {
+        sheep.$router.go(DeltaRoute.WORKER_APPLY);
+        return;
+      }
+
+      sheep.$helper.toast('当前状态不能提交申请');
+    } finally {
+      actionLoading.value = false;
+    }
   }
 
   async function enterWorker() {
-    await deltaStore.enterWorkerMode();
+    if (loading.value || actionLoading.value) {
+      return;
+    }
+
+    actionLoading.value = true;
+
+    try {
+      const route = await deltaStore.enterWorkerMode();
+
+      if (!route) {
+        return;
+      }
+    } catch (enterError) {
+      sheep.$helper.toast(enterError?.msg || enterError?.message || '进入打手工作台失败，请重试');
+    } finally {
+      actionLoading.value = false;
+    }
   }
 
   onShow(refresh);
@@ -193,5 +309,27 @@
   .ghost-btn {
     background: #ffffff;
     color: #343842;
+  }
+
+  .submit-btn[disabled],
+  .ghost-btn[disabled] {
+    opacity: 0.6;
+  }
+
+  .error-card {
+    padding: 44rpx 30rpx;
+    border-radius: 18rpx;
+    background: #ffffff;
+    text-align: center;
+    color: #8c929d;
+    font-size: 26rpx;
+    line-height: 40rpx;
+  }
+
+  .retry {
+    display: inline-block;
+    margin-top: 18rpx;
+    color: #e60012;
+    font-weight: 800;
   }
 </style>
