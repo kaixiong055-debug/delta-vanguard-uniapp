@@ -1,7 +1,7 @@
 <template>
   <s-layout title="服务单详情" :bgStyle="{ color: '#f4f6f8' }">
     <view class="detail-page">
-      <view class="detail-card" v-if="detail.id">
+      <view class="detail-card" v-if="serviceOrderId">
         <view class="title">{{ detail.productName || '服务单' }}</view>
         <view class="row">
           <text class="label">状态</text>
@@ -36,9 +36,9 @@
         </view>
       </view>
       <view v-if="error" class="error-card">{{ error }}<text @tap="getDetail">重试</text></view>
-      <s-empty v-if="!loading && !error && !detail.id" text="暂无服务单详情" />
+      <s-empty v-if="!loading && !error && !serviceOrderId" text="暂无服务单详情" />
       <button
-        v-if="detail.id"
+        v-if="serviceOrderId"
         class="ss-reset-button submit-btn"
         :disabled="submitting"
         @tap="confirmClaim"
@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-  import { ref } from 'vue';
+  import { computed, ref } from 'vue';
   import { onLoad, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import OrderPoolApi from '@/sheep/api/delta/orderPool';
@@ -67,43 +67,125 @@
   const error = ref('');
   const deltaStore = sheep.$store('delta');
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  const serviceOrderId = computed(() => normalizeLongId(detail.value.id));
+
+  function getCurrentServiceOrderId() {
+    return normalizeLongId(detail.value.id || id.value);
+  }
+
   async function getDetail() {
+    if (loading.value) return;
+
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      detail.value = {};
+      error.value = '服务单 ID 不存在';
+      return;
+    }
+
     loading.value = true;
     error.value = '';
-    const res = await OrderPoolApi.getDetail(id.value, { showError: false });
-    if (res?.code === 0) {
-      detail.value = res.data || {};
-    } else {
-      error.value = res?.msg || '详情加载失败';
+
+    try {
+      const res = await OrderPoolApi.getDetail(normalizedId, {
+        showError: false,
+      });
+
+      const responseId = normalizeLongId(res?.data?.id);
+
+      if (res?.code !== 0 || !responseId) {
+        detail.value = {};
+        error.value = res?.msg || '服务单详情加载失败';
+        return;
+      }
+
+      detail.value = res.data;
+    } catch (err) {
+      detail.value = {};
+      error.value = err?.msg || err?.message || '服务单详情加载失败';
+    } finally {
+      loading.value = false;
     }
-    loading.value = false;
+  }
+
+  async function refresh() {
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      detail.value = {};
+      error.value = '服务单 ID 不存在';
+      return;
+    }
+
+    const allowed = await deltaStore.guardWorkerPage();
+
+    if (!allowed) return;
+
+    await getDetail();
   }
 
   function confirmClaim() {
     if (submitting.value) return;
+
+    const currentId = getCurrentServiceOrderId();
+
+    if (!currentId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
     uni.showModal({
       title: '确认接单',
       content: `确认领取服务单 ${detail.value.serviceOrderNo || ''}？`,
       success: ({ confirm }) => {
-        if (confirm) claimOrder();
+        if (confirm) {
+          claimOrder(currentId);
+        }
       },
     });
   }
-  async function claimOrder() {
-    submitting.value = true;
-    const res = await OrderPoolApi.claimOrder(id.value);
-    if (res?.code === 0) {
-      sheep.$router.redirect('/pages-worker/order/detail', { id: id.value });
+
+  async function claimOrder(serviceOrderId) {
+    const normalizedId = normalizeLongId(serviceOrderId);
+
+    if (!normalizedId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
     }
-    submitting.value = false;
+
+    if (submitting.value) return;
+
+    submitting.value = true;
+
+    try {
+      const res = await OrderPoolApi.claimOrder(normalizedId);
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '接单失败，请稍后重试');
+        return;
+      }
+
+      sheep.$router.redirect('/pages-worker/order/detail', {
+        id: normalizedId,
+      });
+    } catch (err) {
+      sheep.$helper.toast(err?.msg || err?.message || '接单失败，请稍后重试');
+    } finally {
+      submitting.value = false;
+    }
   }
 
   onLoad((options = {}) => {
-    id.value = options.id || '';
+    id.value = normalizeLongId(options.id);
   });
-  onShow(async () => {
-    if (id.value && (await deltaStore.guardWorkerPage())) getDetail();
-  });
+
+  onShow(refresh);
 </script>
 
 <style lang="scss" scoped>
