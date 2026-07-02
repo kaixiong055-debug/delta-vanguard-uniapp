@@ -51,8 +51,12 @@
   const error = ref('');
 
   function getServiceOrderId() {
-    const value = Number(id.value);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
+    return normalizeLongId(id.value);
+  }
+
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
   }
 
   function normalizeImageUrls(urls) {
@@ -78,7 +82,10 @@
   }
 
   async function load() {
-    if (loading.value) return;
+    if (loading.value) {
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     const serviceOrderId = getServiceOrderId();
     if (!serviceOrderId) {
@@ -112,8 +119,8 @@
     }
   }
 
-  onLoad((o = {}) => {
-    id.value = o.id || '';
+  onLoad((options = {}) => {
+    id.value = normalizeLongId(options.id);
   });
 
   onShow(() => {

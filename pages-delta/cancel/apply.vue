@@ -32,8 +32,12 @@
   const submitting = ref(false);
 
   function getServiceOrderId() {
-    const value = Number(id.value);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
+    return normalizeLongId(id.value);
+  }
+
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
   }
 
   function confirmSubmit() {
@@ -81,8 +85,8 @@
       submitting.value = false;
     }
   }
-  onLoad((o = {}) => {
-    id.value = o.id || '';
+  onLoad((options = {}) => {
+    id.value = normalizeLongId(options.id);
   });
 </script>
 <style lang="scss" scoped>

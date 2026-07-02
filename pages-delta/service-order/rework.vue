@@ -38,8 +38,12 @@
   const submitting = ref(false);
 
   function getServiceOrderId() {
-    const value = Number(id.value);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
+    return normalizeLongId(id.value);
+  }
+
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
   }
 
   function confirmSubmit() {
@@ -85,7 +89,7 @@
   }
 
   onLoad((options = {}) => {
-    id.value = options.id || '';
+    id.value = normalizeLongId(options.id);
   });
 </script>
 
