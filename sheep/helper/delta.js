@@ -129,6 +129,70 @@ export const cancelableStatuses = [10, 30, 40];
 export const afterSaleStatuses = [50, 60, 70, 80];
 export const acceptableStatuses = [60];
 
+// ====== Cancel Status ======
+
+export const DeltaCancelStatus = {
+  PENDING: 0,
+  APPROVED: 1,
+  REJECTED: 2,
+};
+
+const cancelStatusMap = {
+  [DeltaCancelStatus.PENDING]: '待审核',
+  [DeltaCancelStatus.APPROVED]: '已通过',
+  [DeltaCancelStatus.REJECTED]: '已驳回',
+};
+
+export function getDeltaCancelStatusText(status) {
+  return cancelStatusMap[Number(status)] || '-';
+}
+
+// ====== AfterSale Status ======
+
+export const DeltaAfterSaleStatus = {
+  PENDING: 0,
+  ACCEPTED: 1,
+  REJECTED: 2,
+  ARBITRATED: 3,
+  CLOSED: 4,
+};
+
+const afterSaleStatusMap = {
+  [DeltaAfterSaleStatus.PENDING]: '待处理',
+  [DeltaAfterSaleStatus.ACCEPTED]: '已受理',
+  [DeltaAfterSaleStatus.REJECTED]: '已驳回',
+  [DeltaAfterSaleStatus.ARBITRATED]: '已仲裁',
+  [DeltaAfterSaleStatus.CLOSED]: '已关闭',
+};
+
+export function getDeltaAfterSaleStatusText(status) {
+  return afterSaleStatusMap[Number(status)] || '-';
+}
+
+// ====== Refund Status ======
+
+export const DeltaRefundStatus = {
+  PENDING_MANUAL: 0,
+  MANUAL_PROCESSING: 1,
+  MANUAL_COMPLETED: 2,
+  CANCELED: 3,
+  MANUAL_FAILED: 4,
+};
+
+const refundStatusMap = {
+  [DeltaRefundStatus.PENDING_MANUAL]: '待人工退款',
+  [DeltaRefundStatus.MANUAL_PROCESSING]: '人工退款处理中',
+  [DeltaRefundStatus.MANUAL_COMPLETED]: '人工退款已完成',
+  [DeltaRefundStatus.CANCELED]: '已取消',
+  [DeltaRefundStatus.MANUAL_FAILED]: '人工退款失败',
+};
+
+export function getDeltaRefundStatusText(status) {
+  return refundStatusMap[Number(status)] || '-';
+}
+
+// ====== Service Order Status ======
+
 export function getServiceOrderStatusText(status) {
   return serviceOrderStatusMap[Number(status)] || '-';
 }
