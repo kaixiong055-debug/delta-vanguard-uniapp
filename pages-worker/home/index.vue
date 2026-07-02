@@ -138,11 +138,17 @@
           </view>
         </view>
 
-        <button class="ss-reset-button exit-btn" @tap="exitToShop">返回商城模式</button>
+        <button
+          class="ss-reset-button exit-btn"
+          :disabled="!pageReady || homeLoading"
+          @tap="exitToShop"
+        >
+          返回商城模式
+        </button>
       </block>
     </view>
 
-    <worker-tabbar :active="DeltaRoute.WORKER_HOME" />
+    <worker-tabbar v-if="pageReady && !homeLoading" :active="DeltaRoute.WORKER_HOME" />
   </s-layout>
 </template>
 
@@ -308,7 +314,6 @@
 
   async function loadHome() {
     if (homeLoading.value) {
-      uni.stopPullDownRefresh();
       return;
     }
 
@@ -411,6 +416,10 @@
   }
 
   function exitToShop() {
+    if (!pageReady.value || homeLoading.value) {
+      return;
+    }
+
     deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
   }
 
@@ -742,6 +751,10 @@
   .exit-btn {
     color: #ffffff;
     background: #17191f;
+  }
+
+  .exit-btn[disabled] {
+    opacity: 0.45;
   }
 
   .retry-btn {

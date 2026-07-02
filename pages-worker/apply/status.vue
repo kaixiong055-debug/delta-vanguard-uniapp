@@ -11,7 +11,7 @@
           <view class="status-badge">{{ statusTitle }}</view>
           <view class="status-title">{{ mainTitle }}</view>
           <view class="status-desc">{{ statusDesc }}</view>
-          <view v-if="rejectReason" class="reason-box">
+          <view v-if="isRejected && rejectReason" class="reason-box">
             <view class="reason-label">驳回原因</view>
             <view class="reason-text">{{ rejectReason }}</view>
           </view>
@@ -60,6 +60,8 @@
   const error = ref('');
   const pageReady = ref(false);
 
+  const STATUS_ANOMALY = -1;
+
   const validAuditStatuses = Object.values(DeltaAuditStatus);
 
   function normalizeAuditStatus(value) {
@@ -69,17 +71,13 @@
 
     const status = Number(value);
 
-    return validAuditStatuses.includes(status) ? status : null;
+    return validAuditStatuses.includes(status) ? status : STATUS_ANOMALY;
   }
 
-  const identityStatus = computed(() => Number(deltaStore.identity?.auditStatus));
-  const applicationStatus = computed(() =>
-    Number(
-      deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus ?? 0,
-    ),
-  );
   const normalizedStatus = computed(() => {
     const identityVal = normalizeAuditStatus(deltaStore.identity?.auditStatus);
+
+    if (identityVal === STATUS_ANOMALY) return STATUS_ANOMALY;
 
     if (
       identityVal === DeltaAuditStatus.APPROVED ||
@@ -89,11 +87,13 @@
       return identityVal;
     }
 
-    return (
-      normalizeAuditStatus(
-        deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus,
-      ) ?? DeltaAuditStatus.NOT_APPLIED
+    const appVal = normalizeAuditStatus(
+      deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus,
     );
+
+    if (appVal === STATUS_ANOMALY) return STATUS_ANOMALY;
+
+    return appVal ?? DeltaAuditStatus.NOT_APPLIED;
   });
 
   const statusInfo = computed(() => getWorkerStatusInfo({ auditStatus: normalizedStatus.value }));
@@ -169,6 +169,11 @@
       }
 
       const status = normalizedStatus.value;
+
+      if (status === STATUS_ANOMALY) {
+        error.value = '申请状态异常，请刷新重试';
+        return false;
+      }
 
       if (!validAuditStatuses.includes(status)) {
         error.value = '申请状态异常，请刷新重试';

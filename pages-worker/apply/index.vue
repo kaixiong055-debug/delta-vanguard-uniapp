@@ -150,6 +150,8 @@
     evidenceUrls: [],
   });
 
+  const STATUS_ANOMALY = -1;
+
   const validAuditStatuses = Object.values(DeltaAuditStatus);
 
   function normalizeAuditStatus(value) {
@@ -159,11 +161,13 @@
 
     const status = Number(value);
 
-    return validAuditStatuses.includes(status) ? status : null;
+    return validAuditStatuses.includes(status) ? status : STATUS_ANOMALY;
   }
 
   const currentAuditStatus = computed(() => {
     const identityStatus = normalizeAuditStatus(deltaStore.identity?.auditStatus);
+
+    if (identityStatus === STATUS_ANOMALY) return STATUS_ANOMALY;
 
     if (
       identityStatus === DeltaAuditStatus.APPROVED ||
@@ -173,11 +177,13 @@
       return identityStatus;
     }
 
-    return (
-      normalizeAuditStatus(
-        deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus,
-      ) ?? DeltaAuditStatus.NOT_APPLIED
+    const appStatus = normalizeAuditStatus(
+      deltaStore.application?.applicationStatus ?? deltaStore.identity?.applicationStatus,
     );
+
+    if (appStatus === STATUS_ANOMALY) return STATUS_ANOMALY;
+
+    return appStatus ?? DeltaAuditStatus.NOT_APPLIED;
   });
 
   const isPending = computed(() => currentAuditStatus.value === DeltaAuditStatus.PENDING);
@@ -287,6 +293,11 @@
       }
 
       const status = currentAuditStatus.value;
+
+      if (status === STATUS_ANOMALY) {
+        contextError.value = '申请状态异常，请刷新重试';
+        return;
+      }
 
       if (
         status === DeltaAuditStatus.PENDING ||
@@ -417,6 +428,11 @@
       }
 
       const status = currentAuditStatus.value;
+
+      if (status === STATUS_ANOMALY) {
+        sheep.$helper.toast('申请状态异常，请刷新重试');
+        return;
+      }
 
       if (![DeltaAuditStatus.NOT_APPLIED, DeltaAuditStatus.REJECTED].includes(status)) {
         sheep.$helper.toast('当前状态不能重复提交申请');
