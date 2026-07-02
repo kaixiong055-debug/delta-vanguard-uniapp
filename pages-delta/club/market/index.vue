@@ -11,7 +11,16 @@
             <view class="card-action">查看详情</view>
           </template>
         </market-card>
-        <s-empty v-if="state.list.length === 0" text="暂无可抢挂牌" />
+        <s-empty
+          v-if="
+            state.pageReady &&
+            !state.initializing &&
+            !state.loading &&
+            !state.error &&
+            state.list.length === 0
+          "
+          text="暂无可抢挂牌"
+        />
         <uni-load-more v-if="state.list.length > 0" :status="state.loadStatus" @tap="loadMore" />
       </view>
     </view>
@@ -92,8 +101,12 @@
         state.error = '';
       }
 
-      const listLen = Array.isArray(state.list) ? state.list.length : 0;
-      state.loadStatus = listLen < state.total ? 'more' : 'noMore';
+      if (list.length === 0) {
+        state.loadStatus = 'noMore';
+      } else {
+        const listLen = Array.isArray(state.list) ? state.list.length : 0;
+        state.loadStatus = listLen < state.total ? 'more' : 'noMore';
+      }
       return true;
     } catch (pageError) {
       if (requestedPage === 1) {
