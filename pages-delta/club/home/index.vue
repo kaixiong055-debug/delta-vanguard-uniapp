@@ -4,41 +4,43 @@
       <view v-if="guardError" class="card notice-card">
         <view class="title">身份校验失败</view>
         <view class="muted">{{ guardError }}</view>
-        <button class="ss-reset-button primary-btn" @tap="loadHome">重试</button>
+        <button class="ss-reset-button primary-btn" :disabled="homeLoading" @tap="loadHome">
+          {{ homeLoading ? '加载中' : '重试' }}
+        </button>
       </view>
 
-      <block v-else-if="ready">
+      <block v-else-if="pageReady">
         <view class="card hero">
-          <image v-if="identity.logoUrl" class="logo" :src="identity.logoUrl" mode="aspectFill" />
+          <image v-if="clubInfo.logoUrl" class="logo" :src="clubInfo.logoUrl" mode="aspectFill" />
           <view v-else class="logo fallback">俱</view>
           <view class="hero-info">
-            <view class="title">{{ identity.clubName || '俱乐部' }}</view>
-            <view class="muted">{{ identity.clubCode || '-' }}</view>
+            <view class="title">{{ clubInfo.clubName || '俱乐部' }}</view>
+            <view class="muted">{{ clubInfo.clubCode || '-' }}</view>
           </view>
-          <view class="status">{{ identity.businessStatusName || businessStatusText }}</view>
+          <view class="status">{{ clubInfo.businessStatusName || businessStatusText }}</view>
         </view>
 
-        <view v-if="!deltaStore.clubBusinessEnabled" class="warning">
+        <view v-if="!clubBusinessEnabled" class="warning">
           当前俱乐部已停用，暂不能进入订单市场
         </view>
-        <view v-if="!deltaStore.hasEnabledClubServiceScope" class="warning">
+        <view v-if="!hasEnabledServiceScope" class="warning">
           当前未配置可经营服务范围，请联系平台管理员
         </view>
 
         <view class="card detail-card">
-          <view v-if="identity.description" class="description">{{ identity.description }}</view>
+          <view v-if="clubInfo.description" class="description">{{ clubInfo.description }}</view>
           <view class="row"
             ><text>平台抽成</text><text>{{ commissionRate }}</text></view
           >
           <view class="row"
-            ><text>最大并发订单</text><text>{{ identity.maxConcurrentOrders ?? '-' }}</text></view
+            ><text>最大并发订单</text><text>{{ maxConcurrentText }}</text></view
           >
         </view>
 
         <view class="card scope-card">
           <view class="section-title">服务范围</view>
-          <view v-if="serviceScopes.length">
-            <view v-for="scope in serviceScopes" :key="scope.serviceType" class="scope-row">
+          <view v-if="safeServiceScopes.length">
+            <view v-for="scope in safeServiceScopes" :key="scope.serviceType" class="scope-row">
               <text>{{ scope.serviceTypeName || '未知服务' }}</text>
               <text :class="{ enabled: isScopeEnabled(scope) }">
                 {{ isScopeEnabled(scope) ? '启用' : '停用' }}
@@ -70,7 +72,10 @@
         </view>
       </block>
     </view>
-    <club-tabbar :active="DeltaRoute.CLUB_HOME" />
+    <club-tabbar
+      v-if="pageReady && !homeLoading && !actionLoading"
+      :active="DeltaRoute.CLUB_HOME"
+    />
   </s-layout>
 </template>
 
@@ -78,36 +83,78 @@
   import { computed, ref } from 'vue';
   import { onPullDownRefresh, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
+  import { showAuthModal } from '@/sheep/hooks/useModal';
   import NotificationApi from '@/sheep/api/delta/notification';
   import ClubTabbar from '../../components/club-tabbar.vue';
   import {
     DeltaRoute,
+    DeltaClubBusinessStatus,
     formatCommissionRate,
     getClubBusinessStatusText,
   } from '@/sheep/helper/delta';
 
+  const userStore = sheep.$store('user');
   const deltaStore = sheep.$store('delta');
-  const ready = ref(false);
+
+  const homeLoading = ref(false);
+  const pageReady = ref(false);
   const guardError = ref('');
+  const actionLoading = ref(false);
   const notificationUnreadCount = ref(0);
-  const identity = computed(() => deltaStore.clubIdentity || {});
-  const serviceScopes = computed(() =>
-    Array.isArray(identity.value.serviceScopes) ? identity.value.serviceScopes : [],
+
+  const clubInfo = ref({});
+
+  // ---- derived ----
+
+  const clubBusinessEnabled = computed(
+    () => Number(clubInfo.value.businessStatus) === DeltaClubBusinessStatus.ENABLED,
   );
+
+  const hasEnabledServiceScope = computed(() => {
+    const scopes = Array.isArray(clubInfo.value.serviceScopes) ? clubInfo.value.serviceScopes : [];
+    return scopes.some((scope) => {
+      if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return false;
+      const enabled = scope.enabled;
+      return enabled === true || Number(enabled) === 1 || String(enabled) === '1';
+    });
+  });
+
+  const safeServiceScopes = computed(() => {
+    const scopes = Array.isArray(clubInfo.value.serviceScopes) ? clubInfo.value.serviceScopes : [];
+    return scopes.filter((scope) => scope && typeof scope === 'object' && !Array.isArray(scope));
+  });
+
   const commissionRate = computed(() =>
-    formatCommissionRate(identity.value.platformCommissionRate),
+    formatCommissionRate(clubInfo.value.platformCommissionRate),
   );
+
   const businessStatusText = computed(() =>
-    getClubBusinessStatusText(identity.value.businessStatus),
+    getClubBusinessStatusText(clubInfo.value.businessStatus),
   );
+
+  const maxConcurrentText = computed(() => {
+    const value = Number(clubInfo.value.maxConcurrentOrders);
+    if (Number.isSafeInteger(value) && value >= 0) return String(value);
+    return '-';
+  });
+
   const notificationBadgeText = computed(() => {
     const count = Number(notificationUnreadCount.value || 0);
     if (count <= 0) return '';
     return count > 99 ? '99+' : String(count);
   });
 
+  // ---- helpers ----
+
+  function normalizeCount(value) {
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+  }
+
   function isScopeEnabled(scope) {
-    return scope.enabled === true || Number(scope.enabled) === 1;
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return false;
+    const enabled = scope.enabled;
+    return enabled === true || Number(enabled) === 1 || String(enabled) === '1';
   }
 
   async function loadNotificationUnreadCount() {
@@ -116,35 +163,96 @@
         showError: false,
         showLoading: false,
       });
-      notificationUnreadCount.value = res?.code === 0 ? Number(res.data || 0) : 0;
+      notificationUnreadCount.value = res?.code === 0 ? normalizeCount(res.data) : 0;
     } catch {
       notificationUnreadCount.value = 0;
     }
   }
 
   async function loadHome() {
-    ready.value = false;
-    guardError.value = '';
-    const allowed = await deltaStore.guardClubOwnerPage();
-    if (!allowed) {
-      guardError.value = deltaStore.clubIdentityError;
-      uni.stopPullDownRefresh();
+    if (homeLoading.value) {
       return;
     }
-    ready.value = true;
-    await loadNotificationUnreadCount();
-    uni.stopPullDownRefresh();
+
+    homeLoading.value = true;
+    pageReady.value = false;
+    guardError.value = '';
+    clubInfo.value = {};
+    notificationUnreadCount.value = 0;
+
+    try {
+      if (!userStore.isLogin) {
+        showAuthModal();
+        deltaStore.exitClubMode(DeltaRoute.SHOP_USER);
+        return;
+      }
+
+      const allowed = await deltaStore.guardClubOwnerPage();
+
+      if (!allowed) {
+        if (deltaStore.clubIdentityError) {
+          guardError.value = deltaStore.clubIdentityError;
+        }
+        return;
+      }
+
+      // validate current club identity data
+      const identity = deltaStore.clubIdentity;
+      if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+        guardError.value = '俱乐部资料加载失败，请重试';
+        return;
+      }
+
+      if (identity.isClubOwner !== true) {
+        guardError.value = '俱乐部资料加载失败，请重试';
+        return;
+      }
+
+      const businessStatus = Number(identity.businessStatus);
+      if (
+        businessStatus !== DeltaClubBusinessStatus.DISABLED &&
+        businessStatus !== DeltaClubBusinessStatus.ENABLED
+      ) {
+        guardError.value = '俱乐部状态异常，请刷新重试';
+        return;
+      }
+
+      // snapshot current club info
+      clubInfo.value = { ...identity };
+
+      await loadNotificationUnreadCount();
+
+      pageReady.value = true;
+    } catch (loadError) {
+      guardError.value = loadError?.msg || loadError?.message || '俱乐部首页加载失败，请重试';
+    } finally {
+      homeLoading.value = false;
+      uni.stopPullDownRefresh();
+    }
   }
 
   async function goMarket(requireServiceScope) {
-    const allowed = await deltaStore.guardClubMarketPage({ requireServiceScope });
-    if (!allowed) return;
-    sheep.$router.go(requireServiceScope ? DeltaRoute.CLUB_MARKET : DeltaRoute.CLUB_CLAIMED);
+    if (!pageReady.value || homeLoading.value || actionLoading.value) return;
+
+    actionLoading.value = true;
+
+    try {
+      await deltaStore.guardClubMarketPage({ requireServiceScope });
+    } catch {
+      // guard handles redirect internally
+      // no additional toast needed
+    } finally {
+      actionLoading.value = false;
+    }
   }
+
   function goNotification() {
+    if (!pageReady.value || homeLoading.value || actionLoading.value) return;
     sheep.$router.go(DeltaRoute.DELTA_NOTIFICATIONS);
   }
+
   function exitToShop() {
+    if (!pageReady.value || homeLoading.value || actionLoading.value) return;
     deltaStore.exitClubMode(DeltaRoute.SHOP_USER);
   }
 
@@ -155,7 +263,7 @@
 <style lang="scss" scoped>
   .club-page {
     min-height: 100vh;
-    padding: 24rpx 24rpx 0;
+    padding: 24rpx 24rpx 140rpx;
     box-sizing: border-box;
     background: #f4f6f8;
   }
@@ -299,5 +407,10 @@
     color: #ffffff;
     background: #e60012;
     line-height: 76rpx;
+    font-weight: 800;
+    font-size: 26rpx;
+  }
+  .primary-btn[disabled] {
+    opacity: 0.45;
   }
 </style>

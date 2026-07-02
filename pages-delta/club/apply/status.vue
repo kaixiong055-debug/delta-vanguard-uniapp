@@ -1,63 +1,70 @@
 <template>
   <s-layout title="申请状态" :bgStyle="{ color: '#f4f6f8' }">
     <view class="status-page">
-      <view v-if="loadError" class="card">
-        <view class="title">加载失败</view>
-        <view class="muted">{{ loadError }}</view>
-        <button class="ss-reset-button primary-btn" @tap="loadStatus">重试</button>
+      <view v-if="error" class="error-card">
+        <text>{{ error }}</text>
+        <text class="retry" @tap="loadStatus">重试</text>
       </view>
 
-      <view v-else-if="loaded && !hasApplication" class="card empty-card">
-        <view class="title">尚未提交入驻申请</view>
-        <view class="muted">提交资料后，可在这里查看平台审核进度。</view>
-        <button class="ss-reset-button primary-btn" @tap="goApply">去申请</button>
+      <view v-else-if="pageReady && !hasApplication" class="empty-card">
+        <view class="empty-title">尚未提交入驻申请</view>
+        <view class="empty-desc">提交资料后，可在这里查看平台审核进度。</view>
+        <button
+          class="ss-reset-button primary-btn"
+          :disabled="loading || actionLoading"
+          @tap="goApply"
+        >
+          去申请
+        </button>
       </view>
 
-      <block v-else-if="loaded">
+      <template v-if="pageReady && hasApplication">
         <view class="card status-card">
-          <view class="status-name">{{
-            application.applicationStatusName || statusInfo.title
-          }}</view>
+          <view class="status-name">{{ statusTitle }}</view>
           <view v-if="approvedWithoutProfile" class="approved-tip">
             审核已通过，俱乐部资料正在生成，请稍后刷新
           </view>
-          <view v-if="application.rejectReason" class="reason">
-            审核原因：{{ application.rejectReason }}
+          <view v-if="isRejected && rejectReason" class="reason">
+            审核原因：{{ rejectReason }}
           </view>
-          <view v-if="application.remark" class="reason">备注：{{ application.remark }}</view>
+          <view v-if="applicationData.remark" class="reason">
+            备注：{{ applicationData.remark }}
+          </view>
         </view>
 
         <view class="card detail-card">
           <view class="row"
-            ><text>申请编号</text><text>{{ application.applicationNo || '-' }}</text></view
+            ><text>申请编号</text><text>{{ applicationData.applicationNo || '-' }}</text></view
           >
           <view class="row"
-            ><text>俱乐部名称</text><text>{{ application.clubName || '-' }}</text></view
+            ><text>俱乐部名称</text><text>{{ applicationData.clubName || '-' }}</text></view
           >
           <view class="row"
-            ><text>联系人</text><text>{{ application.contactName || '-' }}</text></view
+            ><text>联系人</text><text>{{ applicationData.contactName || '-' }}</text></view
           >
           <view class="row"
-            ><text>联系电话</text><text>{{ application.contactMobile || '-' }}</text></view
+            ><text>联系电话</text><text>{{ applicationData.contactMobile || '-' }}</text></view
           >
           <view class="row"
-            ><text>联系人微信</text><text>{{ application.contactWechat || '-' }}</text></view
+            ><text>联系人微信</text><text>{{ applicationData.contactWechat || '-' }}</text></view
           >
           <view class="row"
-            ><text>提交时间</text><text>{{ formatDeltaTime(application.createTime) }}</text></view
+            ><text>提交时间</text
+            ><text>{{ formatDeltaTime(applicationData.createTime) }}</text></view
           >
           <view class="row"
-            ><text>审核时间</text><text>{{ formatDeltaTime(application.auditTime) }}</text></view
+            ><text>审核时间</text
+            ><text>{{ formatDeltaTime(applicationData.auditTime) }}</text></view
           >
-          <view v-if="application.description" class="description">{{
-            application.description
+          <view v-if="applicationData.description" class="description">{{
+            applicationData.description
           }}</view>
           <image
-            v-if="application.logoUrl"
+            v-if="safeLogoUrl"
             class="logo"
-            :src="application.logoUrl"
+            :src="safeLogoUrl"
             mode="aspectFill"
-            @tap="preview(application.logoUrl, [application.logoUrl])"
+            @tap="preview(safeLogoUrl, [safeLogoUrl])"
           />
           <view v-if="qualificationImages.length" class="images">
             <image
@@ -74,25 +81,43 @@
         <button
           v-if="canCancel"
           class="ss-reset-button danger-btn"
-          :disabled="canceling"
+          :disabled="loading || actionLoading || canceling"
           @tap="confirmCancel"
         >
           {{ canceling ? '撤销中' : '撤销申请' }}
         </button>
-        <button v-else-if="canReapply" class="ss-reset-button primary-btn" @tap="goApply">
+        <button
+          v-else-if="canReapply"
+          class="ss-reset-button primary-btn"
+          :disabled="loading || actionLoading"
+          @tap="goApply"
+        >
           重新申请
         </button>
-        <button v-else-if="canEnter" class="ss-reset-button primary-btn" @tap="enterClub">
+        <button
+          v-else-if="canEnter"
+          class="ss-reset-button primary-btn"
+          :disabled="loading || actionLoading"
+          @tap="enterClub"
+        >
           进入俱乐部
         </button>
         <button
           v-else-if="approvedWithoutProfile"
           class="ss-reset-button primary-btn"
+          :disabled="loading || actionLoading"
           @tap="loadStatus"
         >
           刷新状态
         </button>
-      </block>
+        <button
+          class="ss-reset-button ghost-btn"
+          :disabled="loading || actionLoading"
+          @tap="loadStatus"
+        >
+          刷新状态
+        </button>
+      </template>
     </view>
   </s-layout>
 </template>
@@ -108,45 +133,83 @@
     getClubApplicationStatusInfo,
   } from '@/sheep/helper/delta';
 
+  const STATUS_ANOMALY = -2;
+
   const deltaStore = sheep.$store('delta');
-  const loaded = ref(false);
-  const loadError = ref('');
+
+  const loading = ref(false);
+  const error = ref('');
+  const pageReady = ref(false);
+  const actionLoading = ref(false);
   const canceling = ref(false);
-  const application = computed(() => deltaStore.clubApplication || {});
-  const identity = computed(() => deltaStore.clubIdentity || {});
-  const hasApplication = computed(() => identity.value.hasApplication === true);
-  const status = computed(() => Number(application.value.applicationStatus));
-  const statusInfo = computed(() => getClubApplicationStatusInfo(identity.value));
-  const qualificationImages = computed(() => parseImageUrls(application.value.qualificationUrls));
-  const canCancel = computed(() => status.value === DeltaClubApplicationStatus.PENDING);
+
+  const identityData = ref({});
+  const applicationData = ref({});
+
+  const validApplicationStatuses = Object.values(DeltaClubApplicationStatus);
+
+  // ---- derived ----
+
+  const hasApplication = computed(() => identityData.value.hasApplication === true);
+  const appStatus = computed(() => Number(applicationData.value.applicationStatus));
+  const statusInfo = computed(() => getClubApplicationStatusInfo(identityData.value));
+  const statusTitle = computed(() => {
+    const info = getClubApplicationStatusInfo(identityData.value);
+    return info.title;
+  });
+
+  const rejectReason = computed(() => String(applicationData.value.rejectReason || '').trim());
+  const isRejected = computed(() => appStatus.value === DeltaClubApplicationStatus.REJECTED);
+  const canCancel = computed(() => appStatus.value === DeltaClubApplicationStatus.PENDING);
   const canReapply = computed(
     () =>
-      status.value === DeltaClubApplicationStatus.REJECTED ||
-      status.value === DeltaClubApplicationStatus.CANCELED,
+      appStatus.value === DeltaClubApplicationStatus.REJECTED ||
+      appStatus.value === DeltaClubApplicationStatus.CANCELED,
   );
   const canEnter = computed(
     () =>
-      status.value === DeltaClubApplicationStatus.APPROVED && identity.value.isClubOwner === true,
+      appStatus.value === DeltaClubApplicationStatus.APPROVED &&
+      identityData.value.isClubOwner === true,
   );
   const approvedWithoutProfile = computed(
     () =>
-      status.value === DeltaClubApplicationStatus.APPROVED && identity.value.isClubOwner !== true,
+      appStatus.value === DeltaClubApplicationStatus.APPROVED &&
+      identityData.value.isClubOwner !== true,
   );
 
+  // ---- image safety ----
+
+  function safeString(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  const safeLogoUrl = computed(() => safeString(applicationData.value.logoUrl));
+
   function parseImageUrls(value) {
-    if (Array.isArray(value)) return value.filter(Boolean);
+    if (Array.isArray(value)) return value.filter((v) => typeof v === 'string' && v).slice(0, 10);
     if (!value) return [];
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-    } catch (error) {
+      return Array.isArray(parsed)
+        ? parsed.filter((v) => typeof v === 'string' && v).slice(0, 10)
+        : [];
+    } catch {
       return [];
     }
   }
 
+  const qualificationImages = computed(() =>
+    parseImageUrls(applicationData.value.qualificationUrls),
+  );
+
   function preview(current, urls) {
-    uni.previewImage({ current, urls });
+    if (!current || typeof current !== 'string') return;
+    const safeUrls = Array.isArray(urls) ? urls.filter((v) => typeof v === 'string') : [];
+    if (!safeUrls.length) return;
+    uni.previewImage({ current, urls: safeUrls });
   }
+
+  // ---- actions ----
 
   function askCancel() {
     return new Promise((resolve) => {
@@ -159,45 +222,176 @@
     });
   }
 
-  async function confirmCancel() {
-    if (canceling.value || !(await askCancel())) return;
-    canceling.value = true;
+  async function loadStatus() {
+    if (loading.value) return false;
+
+    loading.value = true;
+    error.value = '';
+    pageReady.value = false;
+    identityData.value = {};
+    applicationData.value = {};
+
     try {
+      const identityRes = await deltaStore.fetchClubIdentity({
+        force: true,
+        showError: false,
+      });
+
+      if (
+        identityRes?.code !== 0 ||
+        !identityRes?.data ||
+        typeof identityRes.data !== 'object' ||
+        Array.isArray(identityRes.data)
+      ) {
+        error.value =
+          identityRes?.msg || deltaStore.clubIdentityError || '身份查询失败，请稍后重试';
+        return false;
+      }
+
+      identityData.value = identityRes.data;
+
+      if (!hasApplication.value) {
+        pageReady.value = true;
+        return true;
+      }
+
+      const applicationRes = await deltaStore.fetchClubApplication({
+        showError: false,
+        showLoading: false,
+      });
+
+      if (
+        applicationRes?.code !== 0 ||
+        !applicationRes?.data ||
+        typeof applicationRes.data !== 'object' ||
+        Array.isArray(applicationRes.data)
+      ) {
+        error.value = applicationRes?.msg || '申请详情加载失败，请重试';
+        return false;
+      }
+
+      applicationData.value = applicationRes.data;
+
+      // validate applicationStatus
+      const rawStatus = applicationData.value.applicationStatus;
+      const status = Number(rawStatus);
+
+      if (
+        rawStatus === undefined ||
+        rawStatus === null ||
+        rawStatus === '' ||
+        !validApplicationStatuses.includes(status)
+      ) {
+        error.value = '申请状态异常，请刷新重试';
+        return false;
+      }
+
+      pageReady.value = true;
+      return true;
+    } catch (loadError) {
+      error.value = loadError?.msg || loadError?.message || '申请状态查询失败，请重试';
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function confirmCancel() {
+    if (loading.value || actionLoading.value || canceling.value) return;
+
+    if (!(await askCancel())) return;
+
+    canceling.value = true;
+
+    try {
+      // re-check latest status before cancel
+      const identityRes = await deltaStore.fetchClubIdentity({
+        force: true,
+        showError: false,
+      });
+
+      if (
+        identityRes?.code !== 0 ||
+        !identityRes?.data ||
+        typeof identityRes.data !== 'object' ||
+        Array.isArray(identityRes.data)
+      ) {
+        sheep.$helper.toast(identityRes?.msg || '身份查询失败，请稍后重试');
+        return;
+      }
+
+      identityData.value = identityRes.data;
+
+      if (!hasApplication.value || appStatus.value !== DeltaClubApplicationStatus.PENDING) {
+        sheep.$helper.toast('当前状态不能撤销申请');
+        await loadStatus();
+        return;
+      }
+
       const res = await deltaStore.cancelClubApplication();
-      sheep.$helper.toast(res?.msg || (res?.code === 0 ? '撤销成功' : '撤销失败'));
-      if (res?.code === 0) await loadStatus();
-    } catch (error) {
-      sheep.$helper.toast(error?.msg || error?.message || '撤销失败，请稍后重试');
+
+      if (res?.code === 0) {
+        sheep.$helper.toast('撤销成功');
+        await loadStatus();
+        return;
+      }
+
+      sheep.$helper.toast(res?.msg || '撤销失败，请重试');
+    } catch (cancelError) {
+      sheep.$helper.toast(cancelError?.msg || cancelError?.message || '撤销失败，请稍后重试');
     } finally {
       canceling.value = false;
     }
   }
 
-  async function loadStatus() {
-    loaded.value = false;
-    loadError.value = '';
-    const identityRes = await deltaStore.fetchClubIdentity({ force: true, showError: false });
-    if (identityRes?.code !== 0) {
-      loadError.value = deltaStore.clubIdentityError || identityRes?.msg || '请稍后重试';
-      loaded.value = true;
-      return;
-    }
-    if (deltaStore.clubIdentity?.hasApplication === true) {
-      const applicationRes = await deltaStore.fetchClubApplication({ showError: false });
-      if (applicationRes?.code !== 0) {
-        loadError.value = applicationRes?.msg || '申请详情加载失败';
+  async function goApply() {
+    if (loading.value || actionLoading.value) return;
+
+    actionLoading.value = true;
+
+    try {
+      const refreshed = await loadStatus();
+      if (!refreshed) return;
+
+      // navigate to apply page only if status allows
+      if (!hasApplication.value || canReapply.value) {
+        sheep.$router.go(DeltaRoute.CLUB_APPLY);
+        return;
       }
-    } else {
-      deltaStore.clubApplication = null;
+
+      // if status changed to PENDING/APPROVED, stay on status page with latest data
+      if (
+        appStatus.value === DeltaClubApplicationStatus.PENDING ||
+        appStatus.value === DeltaClubApplicationStatus.APPROVED
+      ) {
+        return;
+      }
+
+      // if became club owner
+      if (identityData.value.isClubOwner === true) {
+        deltaStore.enterClubMode();
+        return;
+      }
+
+      // fallback
+      sheep.$router.go(DeltaRoute.CLUB_APPLY);
+    } finally {
+      actionLoading.value = false;
     }
-    loaded.value = true;
   }
 
-  function goApply() {
-    sheep.$router.redirect(DeltaRoute.CLUB_APPLY);
-  }
-  function enterClub() {
-    deltaStore.enterClubMode();
+  async function enterClub() {
+    if (loading.value || actionLoading.value) return;
+
+    actionLoading.value = true;
+
+    try {
+      await deltaStore.enterClubMode();
+    } catch (enterError) {
+      sheep.$helper.toast(enterError?.msg || enterError?.message || '进入俱乐部失败，请重试');
+    } finally {
+      actionLoading.value = false;
+    }
   }
 
   onShow(loadStatus);
@@ -210,19 +404,25 @@
     box-sizing: border-box;
     background: #f4f6f8;
   }
-  .card {
+  .card,
+  .empty-card {
     margin-bottom: 20rpx;
     padding: 26rpx;
     border-radius: 18rpx;
     background: #ffffff;
   }
-  .title,
-  .status-name {
+  .status-name,
+  .empty-title {
     color: #17191f;
     font-size: 34rpx;
     font-weight: 800;
   }
-  .muted,
+  .empty-desc {
+    margin-top: 12rpx;
+    color: #7f8590;
+    font-size: 25rpx;
+    line-height: 40rpx;
+  }
   .reason,
   .approved-tip {
     margin-top: 12rpx;
@@ -262,7 +462,8 @@
     flex-wrap: wrap;
   }
   .primary-btn,
-  .danger-btn {
+  .danger-btn,
+  .ghost-btn {
     width: 100%;
     height: 82rpx;
     margin-top: 24rpx;
@@ -278,5 +479,29 @@
   .danger-btn {
     color: #e60012;
     background: #fff0f1;
+  }
+  .ghost-btn {
+    color: #343842;
+    background: #ffffff;
+  }
+  .primary-btn[disabled],
+  .danger-btn[disabled],
+  .ghost-btn[disabled] {
+    opacity: 0.6;
+  }
+  .error-card {
+    padding: 44rpx 30rpx;
+    border-radius: 18rpx;
+    background: #ffffff;
+    text-align: center;
+    color: #8c929d;
+    font-size: 26rpx;
+    line-height: 40rpx;
+  }
+  .retry {
+    display: inline-block;
+    margin-top: 18rpx;
+    color: #e60012;
+    font-weight: 800;
   }
 </style>
