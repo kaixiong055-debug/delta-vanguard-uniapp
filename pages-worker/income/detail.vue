@@ -3,10 +3,10 @@
     <view class="detail-page">
       <view v-if="error" class="error-card">
         <text>{{ error }}</text>
-        <text class="retry" @tap="loadDetail">重试</text>
+        <text class="retry" @tap="loadWithWorkerGuard">重试</text>
       </view>
 
-      <block v-if="detail.id">
+      <block v-if="settlementId">
         <view class="hero-card">
           <view class="hero-label">打手收入</view>
           <view class="hero-amount">{{ formatAmount(detail.workerAmount) }}</view>
@@ -40,7 +40,7 @@
         </view>
       </block>
 
-      <s-empty v-if="!loading && !error && !detail.id" text="暂无结算详情" />
+      <s-empty v-if="!loading && !error && !settlementId" text="暂无结算详情" />
     </view>
 
     <view class="fixed-explanation">
@@ -69,6 +69,8 @@
   const detail = ref({});
   const loading = ref(false);
   const error = ref('');
+
+  const settlementId = computed(() => normalizeLongId(detail.value.id));
 
   const statusText = computed(() => {
     const status = getSettlementStatusText(detail.value.settlementStatus);
@@ -125,6 +127,11 @@
     { label: '结算备注', value: safeText(detail.value.remark) },
   ]);
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
   function hasValue(value) {
     return value !== null && value !== undefined && value !== '';
   }
@@ -140,42 +147,95 @@
   }
 
   function formatRate(value) {
-    return hasValue(value) ? formatCommissionRate(Number(value)) : '-';
+    if (!hasValue(value)) return '-';
+
+    const rate = Number(value);
+
+    if (!Number.isFinite(rate)) {
+      return '-';
+    }
+
+    return formatCommissionRate(rate);
   }
 
   async function loadDetail() {
-    if (!id.value || loading.value) return;
+    if (loading.value) return;
+
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      detail.value = {};
+      error.value = '结算 ID 不存在';
+      return;
+    }
 
     loading.value = true;
     error.value = '';
 
     try {
-      const res = await SettlementApi.getDetail(id.value, {
+      const res = await SettlementApi.getDetail(normalizedId, {
         showError: false,
         showLoading: false,
       });
+
       if (res?.code === 0) {
-        detail.value = res.data && typeof res.data === 'object' ? res.data : {};
+        const responseId = normalizeLongId(res?.data?.id);
+
+        if (responseId && responseId === normalizedId) {
+          detail.value = {
+            ...res.data,
+            id: responseId,
+          };
+        } else {
+          detail.value = {};
+          error.value = res?.msg || '结算详情加载失败';
+        }
       } else {
         detail.value = {};
         error.value = res?.msg || '结算详情加载失败';
       }
-    } catch (err) {
+    } catch (loadError) {
       detail.value = {};
-      error.value = err?.msg || err?.message || '结算详情加载失败';
+      error.value = loadError?.msg || loadError?.message || '结算详情加载失败';
     } finally {
       loading.value = false;
     }
   }
 
+  async function loadWithWorkerGuard() {
+    try {
+      const normalizedId = normalizeLongId(id.value);
+
+      if (!normalizedId) {
+        detail.value = {};
+        error.value = '结算 ID 不存在';
+        return;
+      }
+
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) {
+        detail.value = {};
+        return;
+      }
+
+      await loadDetail();
+    } catch (guardError) {
+      detail.value = {};
+      error.value = guardError?.msg || guardError?.message || '打手身份校验失败';
+    }
+  }
+
   onLoad((options = {}) => {
-    id.value = options.id || '';
-    if (!id.value) error.value = '结算 ID 不存在';
+    id.value = normalizeLongId(options.id);
+
+    if (!id.value) {
+      detail.value = {};
+      error.value = '结算 ID 不存在';
+    }
   });
 
-  onShow(async () => {
-    if (id.value && (await deltaStore.guardWorkerPage())) await loadDetail();
-  });
+  onShow(loadWithWorkerGuard);
 </script>
 
 <style lang="scss" scoped>

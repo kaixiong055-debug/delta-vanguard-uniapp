@@ -14,7 +14,7 @@
             <view class="summary-label">{{ item.label }}</view>
           </view>
         </view>
-        <view v-if="summaryError" class="summary-error" @tap="getSummary">
+        <view v-if="summaryError" class="summary-error" @tap="refreshWithWorkerGuard">
           {{ summaryError }}，点击重试
         </view>
       </view>
@@ -42,10 +42,15 @@
 
       <view v-if="state.error" class="error-card">
         <text>{{ state.error }}</text>
-        <text class="retry" @tap="getList(true)">重试</text>
+        <text class="retry" @tap="refreshWithWorkerGuard">重试</text>
       </view>
 
-      <view v-for="item in state.list" :key="item.id" class="record-card" @tap="goDetail(item.id)">
+      <view
+        v-for="(item, index) in state.list"
+        :key="item.id || `${item.settlementNo || 'invalid-settlement'}-${index}`"
+        class="record-card"
+        @tap="goDetail(item.id)"
+      >
         <view class="record-head">
           <view>
             <view class="record-label">结算单号</view>
@@ -116,6 +121,8 @@
     { key: 'rejectedAmount', label: '已驳回金额' },
   ];
 
+  const validSettlementStatuses = Object.values(SettlementStatus);
+
   const statusOptions = [
     { key: 'all', label: '全部', value: undefined },
     { key: 'pending', label: '待审核', value: SettlementStatus.PENDING_REVIEW },
@@ -146,6 +153,38 @@
     () => statusDescriptions[state.status] || '查看全部服务订单结算记录及平台处理状态。',
   );
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  function normalizeCount(value) {
+    const number = Number(value);
+
+    if (!Number.isSafeInteger(number) || number < 0) {
+      return 0;
+    }
+
+    return number;
+  }
+
+  function normalizeSettlementStatus(value) {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+
+    const status = Number(value);
+
+    return validSettlementStatuses.includes(status) ? status : undefined;
+  }
+
+  function normalizeSettlementRecord(item = {}) {
+    return {
+      ...item,
+      id: normalizeLongId(item.id),
+    };
+  }
+
   function hasValue(value) {
     return value !== null && value !== undefined && value !== '';
   }
@@ -169,19 +208,32 @@
     return formatAmount(summary.value?.[key]);
   }
 
+  function restoreAfterLoadFailure(reset, requestedPage) {
+    if (!reset && requestedPage > 1) {
+      state.pageNo = requestedPage - 1;
+    }
+
+    state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+  }
+
   async function getSummary() {
     if (summaryLoading.value) return;
 
     summaryLoading.value = true;
     summaryError.value = '';
     try {
-      const res = await SettlementApi.getSummary({ showError: false, showLoading: false });
+      const res = await SettlementApi.getSummary({
+        showError: false,
+        showLoading: false,
+      });
       if (res?.code === 0) {
         summary.value = res.data && typeof res.data === 'object' ? res.data : {};
       } else {
+        summary.value = {};
         summaryError.value = res?.msg || '收入总览加载失败';
       }
     } catch (error) {
+      summary.value = {};
       summaryError.value = error?.msg || error?.message || '收入总览加载失败';
     } finally {
       summaryLoading.value = false;
@@ -189,13 +241,22 @@
   }
 
   async function getList(reset = false) {
-    if (state.loading) return;
+    if (state.loading) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    if (!reset && state.loadStatus === 'noMore') {
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     if (reset) {
       state.pageNo = 1;
       state.list = [];
       state.total = 0;
       state.loadStatus = 'more';
+      state.error = '';
     }
 
     const requestedPage = state.pageNo;
@@ -204,81 +265,104 @@
     state.loadStatus = 'loading';
 
     try {
-      const res = await SettlementApi.getPage(
-        {
-          pageNo: requestedPage,
-          pageSize: state.pageSize,
-          status: state.status,
-        },
-        { showError: false, showLoading: false },
-      );
+      const params = {
+        pageNo: requestedPage,
+        pageSize: state.pageSize,
+      };
+
+      if (state.status !== undefined) {
+        params.status = state.status;
+      }
+
+      const res = await SettlementApi.getPage(params, {
+        showError: false,
+        showLoading: false,
+      });
 
       if (res?.code === 0) {
-        const list = Array.isArray(res.data?.list) ? res.data.list : [];
-        state.total = Number(res.data?.total || 0);
-        state.list = reset ? list : state.list.concat(list);
+        const rows = Array.isArray(res.data?.list)
+          ? res.data.list.map(normalizeSettlementRecord)
+          : [];
+        state.total = normalizeCount(res.data?.total);
+        state.list = reset ? rows : state.list.concat(rows);
         state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
       } else {
         state.error = res?.msg || '结算记录加载失败';
-        if (requestedPage > 1) state.pageNo = requestedPage - 1;
-        state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+        restoreAfterLoadFailure(reset, requestedPage);
       }
     } catch (error) {
       state.error = error?.msg || error?.message || '结算记录加载失败';
-      if (requestedPage > 1) state.pageNo = requestedPage - 1;
-      state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+      restoreAfterLoadFailure(reset, requestedPage);
     } finally {
       state.loading = false;
+      uni.stopPullDownRefresh();
     }
   }
 
-  async function refresh() {
+  async function refreshWithWorkerGuard() {
     try {
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) return;
+
       await Promise.all([getSummary(), getList(true)]);
+    } catch (guardError) {
+      state.error = guardError?.msg || guardError?.message || '打手身份校验失败';
     } finally {
       uni.stopPullDownRefresh();
     }
   }
 
-  function changeStatus(status) {
-    if (state.status === status || state.loading) return;
-    state.status = status;
-    getList(true);
+  async function changeStatus(status) {
+    if (state.loading) return;
+
+    const nextStatus = normalizeSettlementStatus(status);
+
+    if (state.status === nextStatus) return;
+
+    try {
+      const allowed = await deltaStore.guardWorkerPage();
+      if (!allowed) return;
+
+      state.status = nextStatus;
+      await getList(true);
+    } catch (guardError) {
+      state.error = guardError?.msg || guardError?.message || '打手身份校验失败';
+    }
   }
 
   function goDetail(id) {
-    if (!id) return;
-    sheep.$router.go('/pages-worker/income/detail', { id });
+    const settlementId = normalizeLongId(id);
+
+    if (!settlementId) {
+      sheep.$helper.toast('结算 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go('/pages-worker/income/detail', {
+      id: settlementId,
+    });
   }
 
   function loadMore() {
-    if (state.loadStatus !== 'more' || state.loading) return;
+    if (state.loading || state.loadStatus !== 'more') {
+      return;
+    }
+
     state.pageNo += 1;
     getList();
   }
 
   onLoad((options = {}) => {
-    if (options.status === undefined || options.status === '') {
-      state.status = undefined;
-      return;
-    }
-    const status = Number(options.status);
-    const validStatuses = Object.values(SettlementStatus);
-    state.status = validStatuses.includes(status) ? status : undefined;
+    state.status = normalizeSettlementStatus(options.status);
   });
 
   onShow(async () => {
-    if (await deltaStore.guardWorkerPage()) await refresh();
+    await refreshWithWorkerGuard();
   });
 
   onPullDownRefresh(async () => {
-    try {
-      if (await deltaStore.guardWorkerPage()) await refresh();
-    } catch (error) {
-      state.error = error?.msg || error?.message || '结算记录加载失败';
-    } finally {
-      uni.stopPullDownRefresh();
-    }
+    await refreshWithWorkerGuard();
   });
   onReachBottom(loadMore);
 </script>
