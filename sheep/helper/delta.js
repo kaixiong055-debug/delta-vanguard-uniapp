@@ -35,6 +35,20 @@ export const DeltaWorkStatus = {
   PAUSED: 3,
 };
 
+export const DeltaDispatchMode = {
+  DESIGNATED: 1,
+  ADMIN_ASSIGN: 2,
+  PUBLIC_CLAIM: 3,
+  CLUB_ASSIGN: 4,
+};
+
+export const dispatchModeMap = {
+  [DeltaDispatchMode.DESIGNATED]: '客户指定',
+  [DeltaDispatchMode.ADMIN_ASSIGN]: '客服派单',
+  [DeltaDispatchMode.PUBLIC_CLAIM]: '接单大厅',
+  [DeltaDispatchMode.CLUB_ASSIGN]: '俱乐部分派',
+};
+
 export const DeltaRoute = {
   SHOP_USER: '/pages/index/user',
   WORKER_HOME: '/pages-worker/home/index',
@@ -107,6 +121,10 @@ export function getServiceTypeText(type) {
 
 export function getDeviceTypeText(type) {
   return deviceTypeMap[Number(type)] || '-';
+}
+
+export function getDispatchModeText(mode) {
+  return dispatchModeMap[Number(mode)] || '-';
 }
 
 export function formatDeltaAmount(amount) {
