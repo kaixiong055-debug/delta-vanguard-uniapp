@@ -18,7 +18,7 @@
 
       <button
         class="ss-reset-button submit"
-        :disabled="submitting || !id"
+        :disabled="submitting || !getServiceOrderId()"
         @tap="confirmSubmit"
       >
         {{ submitting ? '提交中' : '确认验收通过' }}
@@ -37,8 +37,14 @@
   const remark = ref('');
   const submitting = ref(false);
 
+  function getServiceOrderId() {
+    const value = Number(id.value);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
   function confirmSubmit() {
-    if (!id.value) {
+    const serviceOrderId = getServiceOrderId();
+    if (!serviceOrderId) {
       sheep.$helper.toast('服务单 ID 不存在');
       return;
     }
@@ -48,21 +54,23 @@
       title: '确认验收',
       content: '验收后订单将完成，确认继续？',
       success: ({ confirm }) => {
-        if (confirm) submit();
+        if (confirm) submit(serviceOrderId);
       },
     });
   }
 
-  async function submit() {
+  async function submit(serviceOrderId) {
     submitting.value = true;
     try {
       const res = await ServiceOrderApi.accept({
-        serviceOrderId: Number(id.value),
+        serviceOrderId,
         remark: remark.value.trim(),
       });
-      if (res?.code === 0) {
-        setTimeout(() => sheep.$router.back(), 300);
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '验收失败，请稍后重试');
+        return;
       }
+      setTimeout(() => sheep.$router.back(), 300);
     } catch (error) {
       sheep.$helper.toast(error?.msg || error?.message || '验收失败，请稍后重试');
     } finally {

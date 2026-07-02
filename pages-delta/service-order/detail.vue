@@ -31,6 +31,11 @@
       </view>
       <s-empty v-if="!loading && !error && !detail.id" text="暂无服务订单详情" />
 
+      <view v-if="sectionWarning" class="section-warning">
+        {{ sectionWarning }}
+        <text @tap="refresh">重新加载</text>
+      </view>
+
       <view v-if="detail.id" class="action-grid">
         <button class="ss-reset-button ghost" @tap="go('/pages-delta/service-order/progress')">
           履约进度{{ progressList.length ? `（${progressList.length}）` : '' }}
@@ -77,7 +82,7 @@
         <view v-for="item in progressPreview" :key="item.id" class="record">
           <view class="record-head">
             <view>{{ item.progressTypeName || progressTypeMap[item.progressType] }}</view>
-            <text>{{ item.progressPercent ?? '-' }}%</text>
+            <text>{{ formatProgressPercent(item.progressPercent) }}</text>
           </view>
           <view class="record-content">{{ item.content || '-' }}</view>
           <text>{{ formatDeltaTime(item.createTime) }}</text>
@@ -144,7 +149,7 @@
     afterSaleStatuses,
     cancelableStatuses,
     evidenceTypeMap,
-    formatDeltaAmount,
+    formatDeltaOptionalAmount,
     formatDeltaTime,
     getDeviceTypeText,
     getServiceTypeText,
@@ -160,6 +165,16 @@
   const reworks = ref([]);
   const loading = ref(false);
   const error = ref('');
+  const sectionWarning = ref('');
+
+  function formatProgressPercent(value) {
+    if (value === null || value === undefined || value === '') return '-';
+
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '-';
+
+    return `${number}%`;
+  }
 
   const canAccept = computed(() =>
     acceptableStatuses.includes(Number(detail.value.status)),
@@ -258,7 +273,7 @@
     { label: '服务类型', value: getServiceTypeText(detail.value.serviceType) },
     { label: '设备类型', value: getDeviceTypeText(detail.value.deviceType) },
     { label: '购买数量', value: detail.value.count ?? '-' },
-    { label: '服务金额', value: formatDeltaAmount(detail.value.serviceAmount) },
+    { label: '服务金额', value: formatDeltaOptionalAmount(detail.value.serviceAmount) },
     { label: '创建时间', value: formatDeltaTime(detail.value.createTime) },
     { label: '更新时间', value: formatDeltaTime(detail.value.updateTime) },
   ]);
@@ -268,6 +283,7 @@
 
     loading.value = true;
     error.value = '';
+    sectionWarning.value = '';
 
     const requests = [
       ServiceOrderApi.getDetail(id.value, { showError: false }),
@@ -293,35 +309,48 @@
         reworkRes,
       ] = values;
 
+      let warning = false;
+
       if (detailRes?.code === 0) {
         detail.value = detailRes.data || {};
       } else {
         detail.value = {};
         error.value = detailRes?.msg || '详情加载失败';
+        loading.value = false;
+        return;
       }
 
       timeline.value =
         timelineRes?.code === 0 && Array.isArray(timelineRes.data)
           ? timelineRes.data
-          : [];
+          : (warning = true) && [];
       progressList.value =
         progressRes?.code === 0 && Array.isArray(progressRes.data)
           ? progressRes.data
-          : [];
+          : (warning = true) && [];
       evidenceList.value =
         evidenceRes?.code === 0 && Array.isArray(evidenceRes.data)
           ? evidenceRes.data
-          : [];
+          : (warning = true) && [];
       acceptances.value =
         acceptanceRes?.code === 0 && Array.isArray(acceptanceRes.data)
           ? acceptanceRes.data
-          : [];
+          : (warning = true) && [];
       reworks.value =
         reworkRes?.code === 0 && Array.isArray(reworkRes.data)
           ? reworkRes.data
-          : [];
+          : (warning = true) && [];
+
+      if (warning) {
+        sectionWarning.value = '部分履约记录加载失败';
+      }
     } catch (err) {
       detail.value = {};
+      timeline.value = [];
+      progressList.value = [];
+      evidenceList.value = [];
+      acceptances.value = [];
+      reworks.value = [];
       error.value = err?.msg || err?.message || '详情加载失败';
     } finally {
       loading.value = false;
@@ -454,6 +483,21 @@
     max-width: 70%;
     text-align: right;
     word-break: break-all;
+  }
+
+  .section-warning {
+    margin-bottom: 18rpx;
+    padding: 20rpx 24rpx;
+    border-radius: 14rpx;
+    color: #8a4d00;
+    background: #fff6e6;
+    font-size: 24rpx;
+  }
+
+  .section-warning text {
+    float: right;
+    color: #e60012;
+    font-weight: 600;
   }
 
   .action-grid {

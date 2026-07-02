@@ -18,7 +18,7 @@
 
       <button
         class="ss-reset-button submit"
-        :disabled="submitting || !id"
+        :disabled="submitting || !getServiceOrderId()"
         @tap="confirmSubmit"
       >
         {{ submitting ? '提交中' : '提交返工要求' }}
@@ -37,8 +37,14 @@
   const reason = ref('');
   const submitting = ref(false);
 
+  function getServiceOrderId() {
+    const value = Number(id.value);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
   function confirmSubmit() {
-    if (!id.value) {
+    const serviceOrderId = getServiceOrderId();
+    if (!serviceOrderId) {
       sheep.$helper.toast('服务单 ID 不存在');
       return;
     }
@@ -52,21 +58,23 @@
       title: '要求返工',
       content: '确认将订单退回服务进行中？',
       success: ({ confirm }) => {
-        if (confirm) submit();
+        if (confirm) submit(serviceOrderId);
       },
     });
   }
 
-  async function submit() {
+  async function submit(serviceOrderId) {
     submitting.value = true;
     try {
       const res = await ServiceOrderApi.requestRework({
-        serviceOrderId: Number(id.value),
+        serviceOrderId,
         reason: reason.value.trim(),
       });
-      if (res?.code === 0) {
-        setTimeout(() => sheep.$router.back(), 300);
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '返工提交失败，请稍后重试');
+        return;
       }
+      setTimeout(() => sheep.$router.back(), 300);
     } catch (error) {
       sheep.$helper.toast(error?.msg || error?.message || '返工提交失败，请稍后重试');
     } finally {

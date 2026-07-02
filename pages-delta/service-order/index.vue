@@ -57,7 +57,7 @@
 
         <view class="card-foot">
           <text>{{ formatDeltaTime(item.createTime) }}</text>
-          <view>{{ formatDeltaAmount(item.serviceAmount) }}</view>
+          <view>{{ formatDeltaOptionalAmount(item.serviceAmount) }}</view>
         </view>
       </view>
 
@@ -87,7 +87,7 @@
   import ServiceStatus from '../components/service-status.vue';
   import {
     ServiceOrderStatus,
-    formatDeltaAmount,
+    formatDeltaOptionalAmount,
     formatDeltaTime,
     getDeviceTypeText,
     getServiceTypeText,
@@ -131,6 +131,7 @@
       state.list = [];
       state.total = 0;
       state.loadStatus = 'more';
+      state.error = '';
     }
 
     const requestedPage = state.pageNo;
@@ -167,10 +168,10 @@
     }
   }
 
-  function changeStatus(status) {
-    if (state.status === status) return;
+  async function changeStatus(status) {
+    if (state.loading || state.status === status) return;
     state.status = status;
-    getList(true);
+    await getList(true);
   }
 
   function loadMore() {

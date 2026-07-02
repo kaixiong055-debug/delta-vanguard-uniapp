@@ -10,12 +10,7 @@
           ><view class="field">{{
             types.find((i) => i.value === form.afterSaleType)?.label
           }}</view></picker
-        ><view class="label">原因类型编号（选填）</view
-        ><input
-          v-model.number="form.reasonType"
-          class="field"
-          type="number"
-          placeholder="后端当前未提供原因类型枚举" /><view class="label">申请原因</view
+        ><view class="label">申请原因</view
         ><textarea
           v-model="form.reason"
           class="textarea"
@@ -36,7 +31,7 @@
           fileMediatype="image"
           :limit="9"
           mode="grid" /></view
-      ><button class="ss-reset-button submit" :disabled="submitting" @tap="confirmSubmit">{{
+      ><button class="ss-reset-button submit" :disabled="submitting || !getServiceOrderId()" @tap="confirmSubmit">{{
         submitting ? '提交中' : '提交售后申请'
       }}</button></view
     ></s-layout
@@ -47,49 +42,120 @@
   import { onLoad } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
+  import { DeltaAfterSaleType } from '@/sheep/helper/delta';
+
   const id = ref('');
   const refundYuan = ref('');
   const evidenceUrls = ref([]);
   const submitting = ref(false);
+
   const types = [
-    { label: '服务质量问题', value: 1 },
-    { label: '服务与描述不符', value: 2 },
-    { label: '打手未履约', value: 3 },
-    { label: '其他', value: 4 },
+    {
+      label: '服务质量问题',
+      value: DeltaAfterSaleType.QUALITY_ISSUE,
+    },
+    {
+      label: '服务与描述不符',
+      value: DeltaAfterSaleType.NOT_AS_DESCRIBED,
+    },
+    {
+      label: '打手未履约',
+      value: DeltaAfterSaleType.WORKER_NO_SHOW,
+    },
+    {
+      label: '其他',
+      value: DeltaAfterSaleType.OTHER,
+    },
   ];
-  const form = reactive({ afterSaleType: 1, reasonType: undefined, reason: '', description: '' });
+
+  const form = reactive({
+    afterSaleType: DeltaAfterSaleType.QUALITY_ISSUE,
+    reason: '',
+    description: '',
+  });
+
+  function getServiceOrderId() {
+    const value = Number(id.value);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
+  function parseRefundAmount(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return { valid: true, amount: undefined };
+
+    if (!/^(?:\d+|\d*\.\d{1,2})$/.test(text)) {
+      return { valid: false, amount: undefined };
+    }
+
+    const yuan = Number(text);
+    if (!Number.isFinite(yuan) || yuan < 0) {
+      return { valid: false, amount: undefined };
+    }
+
+    const amount = Math.round(yuan * 100);
+    if (!Number.isSafeInteger(amount)) {
+      return { valid: false, amount: undefined };
+    }
+
+    return { valid: true, amount };
+  }
+
   function confirmSubmit() {
     if (!form.reason.trim()) {
       uni.showToast({ title: '请填写售后原因', icon: 'none' });
       return;
     }
-    const amount = refundYuan.value === '' ? undefined : Math.round(Number(refundYuan.value) * 100);
-    if (amount !== undefined && (!Number.isFinite(amount) || amount < 0)) {
+
+    const result = parseRefundAmount(refundYuan.value);
+    if (!result.valid) {
       uni.showToast({ title: '退款金额格式不正确', icon: 'none' });
       return;
     }
+
+    if (submitting.value) return;
+
+    const serviceOrderId = getServiceOrderId();
+    if (!serviceOrderId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
     uni.showModal({
       title: '提交售后',
       content: '确认提交售后申请？',
       success: ({ confirm }) => {
-        if (confirm) submit(amount);
+        if (confirm) submit(serviceOrderId, result.amount);
       },
     });
   }
-  async function submit(amount) {
+
+  async function submit(serviceOrderId, amount) {
     if (submitting.value) return;
     submitting.value = true;
-    const res = await ServiceOrderApi.applyAfterSale({
-      serviceOrderId: Number(id.value),
-      afterSaleType: form.afterSaleType,
-      reasonType: form.reasonType === '' ? undefined : Number(form.reasonType),
-      reason: form.reason.trim(),
-      description: form.description.trim(),
-      requestedRefundAmount: amount,
-      evidenceUrls: JSON.stringify(evidenceUrls.value || []),
-    });
-    submitting.value = false;
-    if (res?.code === 0) sheep.$router.redirect('/pages-delta/after-sale/index');
+
+    try {
+      const urls = Array.isArray(evidenceUrls.value) ? evidenceUrls.value : [];
+
+      const res = await ServiceOrderApi.applyAfterSale({
+        serviceOrderId,
+        afterSaleType: form.afterSaleType,
+        reason: form.reason.trim(),
+        description: form.description.trim(),
+        requestedRefundAmount: amount,
+        evidenceUrls: JSON.stringify(urls),
+      });
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '售后申请提交失败');
+        return;
+      }
+
+      sheep.$router.redirect('/pages-delta/after-sale/index');
+    } catch (error) {
+      sheep.$helper.toast(error?.msg || error?.message || '售后申请提交失败');
+    } finally {
+      submitting.value = false;
+    }
   }
   onLoad((o = {}) => {
     id.value = o.id || '';

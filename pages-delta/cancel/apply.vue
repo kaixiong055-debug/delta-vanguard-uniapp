@@ -15,7 +15,7 @@
           maxlength="500"
           placeholder="补充说明"
         /></view
-      ><button class="ss-reset-button submit" :disabled="submitting" @tap="confirmSubmit">{{
+      ><button class="ss-reset-button submit" :disabled="submitting || !getServiceOrderId()" @tap="confirmSubmit">{{
         submitting ? '提交中' : '提交取消申请'
       }}</button></view
     ></s-layout
@@ -30,29 +30,56 @@
   const reason = ref('');
   const remark = ref('');
   const submitting = ref(false);
+
+  function getServiceOrderId() {
+    const value = Number(id.value);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+
   function confirmSubmit() {
     if (!reason.value.trim()) {
       uni.showToast({ title: '请填写取消原因', icon: 'none' });
       return;
     }
+    if (submitting.value) return;
+
+    const serviceOrderId = getServiceOrderId();
+    if (!serviceOrderId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
     uni.showModal({
       title: '申请取消',
       content: '取消申请需平台审核，确认提交？',
       success: ({ confirm }) => {
-        if (confirm) submit();
+        if (confirm) submit(serviceOrderId);
       },
     });
   }
-  async function submit() {
+
+  async function submit(serviceOrderId) {
     if (submitting.value) return;
     submitting.value = true;
-    const res = await ServiceOrderApi.applyCancel({
-      serviceOrderId: Number(id.value),
-      reason: reason.value.trim(),
-      remark: remark.value.trim(),
-    });
-    submitting.value = false;
-    if (res?.code === 0) sheep.$router.redirect('/pages-delta/cancel/index');
+
+    try {
+      const res = await ServiceOrderApi.applyCancel({
+        serviceOrderId,
+        reason: reason.value.trim(),
+        remark: remark.value.trim(),
+      });
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '取消申请提交失败');
+        return;
+      }
+
+      sheep.$router.redirect('/pages-delta/cancel/index');
+    } catch (error) {
+      sheep.$helper.toast(error?.msg || error?.message || '取消申请提交失败');
+    } finally {
+      submitting.value = false;
+    }
   }
   onLoad((o = {}) => {
     id.value = o.id || '';
