@@ -14,18 +14,18 @@ const NotificationApi = {
     }),
   getUnreadCount: (custom) =>
     request({ url: '/delta/notification/unread-count', method: 'GET', custom: withAuth(custom) }),
-  markRead: (id) =>
+  markRead: (id, custom) =>
     request({
       url: '/delta/notification/read',
       method: 'PUT',
       data: { id },
-      custom: withAuth({ showLoading: true }),
+      custom: withAuth(custom),
     }),
-  markAllRead: () =>
+  markAllRead: (custom) =>
     request({
       url: '/delta/notification/read-all',
       method: 'PUT',
-      custom: withAuth({ showLoading: true, showSuccess: true, successMsg: '已全部标记为已读' }),
+      custom: withAuth(custom),
     }),
 };
 
