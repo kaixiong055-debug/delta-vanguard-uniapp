@@ -112,11 +112,7 @@
 
   const hasEnabledServiceScope = computed(() => {
     const scopes = Array.isArray(clubInfo.value.serviceScopes) ? clubInfo.value.serviceScopes : [];
-    return scopes.some((scope) => {
-      if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return false;
-      const enabled = scope.enabled;
-      return enabled === true || Number(enabled) === 1 || String(enabled) === '1';
-    });
+    return scopes.some(isScopeEnabled);
   });
 
   const safeServiceScopes = computed(() => {
@@ -237,10 +233,19 @@
     actionLoading.value = true;
 
     try {
-      await deltaStore.guardClubMarketPage({ requireServiceScope });
-    } catch {
-      // guard handles redirect internally
-      // no additional toast needed
+      const allowed = await deltaStore.guardClubMarketPage({
+        requireServiceScope,
+      });
+
+      if (!allowed) {
+        return;
+      }
+
+      sheep.$router.go(requireServiceScope ? DeltaRoute.CLUB_MARKET : DeltaRoute.CLUB_CLAIMED);
+    } catch (marketError) {
+      sheep.$helper.toast(
+        marketError?.msg || marketError?.message || '进入俱乐部订单页面失败，请重试',
+      );
     } finally {
       actionLoading.value = false;
     }

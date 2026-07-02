@@ -89,8 +89,6 @@
   import test from '@/sheep/helper/test';
   import { DeltaClubApplicationStatus, DeltaRoute } from '@/sheep/helper/delta';
 
-  const STATUS_ANOMALY = -2;
-
   const deltaStore = sheep.$store('delta');
 
   const loading = ref(false);
@@ -111,7 +109,12 @@
     description: '',
   });
 
-  const validApplicationStatuses = Object.values(DeltaClubApplicationStatus);
+  const validApplicationStatuses = [
+    DeltaClubApplicationStatus.PENDING,
+    DeltaClubApplicationStatus.APPROVED,
+    DeltaClubApplicationStatus.REJECTED,
+    DeltaClubApplicationStatus.CANCELED,
+  ];
 
   // ---- normalization helpers ----
 

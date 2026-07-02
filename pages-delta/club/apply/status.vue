@@ -11,7 +11,7 @@
         <view class="empty-desc">提交资料后，可在这里查看平台审核进度。</view>
         <button
           class="ss-reset-button primary-btn"
-          :disabled="loading || actionLoading"
+          :disabled="loading || actionLoading || canceling"
           @tap="goApply"
         >
           去申请
@@ -89,7 +89,7 @@
         <button
           v-else-if="canReapply"
           class="ss-reset-button primary-btn"
-          :disabled="loading || actionLoading"
+          :disabled="loading || actionLoading || canceling"
           @tap="goApply"
         >
           重新申请
@@ -97,7 +97,7 @@
         <button
           v-else-if="canEnter"
           class="ss-reset-button primary-btn"
-          :disabled="loading || actionLoading"
+          :disabled="loading || actionLoading || canceling"
           @tap="enterClub"
         >
           进入俱乐部
@@ -105,14 +105,14 @@
         <button
           v-else-if="approvedWithoutProfile"
           class="ss-reset-button primary-btn"
-          :disabled="loading || actionLoading"
+          :disabled="loading || actionLoading || canceling"
           @tap="loadStatus"
         >
           刷新状态
         </button>
         <button
           class="ss-reset-button ghost-btn"
-          :disabled="loading || actionLoading"
+          :disabled="loading || actionLoading || canceling"
           @tap="loadStatus"
         >
           刷新状态
@@ -133,8 +133,6 @@
     getClubApplicationStatusInfo,
   } from '@/sheep/helper/delta';
 
-  const STATUS_ANOMALY = -2;
-
   const deltaStore = sheep.$store('delta');
 
   const loading = ref(false);
@@ -146,13 +144,17 @@
   const identityData = ref({});
   const applicationData = ref({});
 
-  const validApplicationStatuses = Object.values(DeltaClubApplicationStatus);
+  const validApplicationStatuses = [
+    DeltaClubApplicationStatus.PENDING,
+    DeltaClubApplicationStatus.APPROVED,
+    DeltaClubApplicationStatus.REJECTED,
+    DeltaClubApplicationStatus.CANCELED,
+  ];
 
   // ---- derived ----
 
   const hasApplication = computed(() => identityData.value.hasApplication === true);
   const appStatus = computed(() => Number(applicationData.value.applicationStatus));
-  const statusInfo = computed(() => getClubApplicationStatusInfo(identityData.value));
   const statusTitle = computed(() => {
     const info = getClubApplicationStatusInfo(identityData.value);
     return info.title;
@@ -299,67 +301,59 @@
   async function confirmCancel() {
     if (loading.value || actionLoading.value || canceling.value) return;
 
-    if (!(await askCancel())) return;
-
-    canceling.value = true;
+    actionLoading.value = true;
 
     try {
-      // re-check latest status before cancel
-      const identityRes = await deltaStore.fetchClubIdentity({
-        force: true,
-        showError: false,
-      });
+      const refreshed = await loadStatus();
 
-      if (
-        identityRes?.code !== 0 ||
-        !identityRes?.data ||
-        typeof identityRes.data !== 'object' ||
-        Array.isArray(identityRes.data)
-      ) {
-        sheep.$helper.toast(identityRes?.msg || '身份查询失败，请稍后重试');
-        return;
-      }
+      if (!refreshed) return;
 
-      identityData.value = identityRes.data;
-
-      if (!hasApplication.value || appStatus.value !== DeltaClubApplicationStatus.PENDING) {
+      if (!canCancel.value) {
         sheep.$helper.toast('当前状态不能撤销申请');
-        await loadStatus();
         return;
       }
+
+      if (!(await askCancel())) return;
+
+      canceling.value = true;
 
       const res = await deltaStore.cancelClubApplication();
 
-      if (res?.code === 0) {
-        sheep.$helper.toast('撤销成功');
-        await loadStatus();
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '撤销失败，请重试');
         return;
       }
 
-      sheep.$helper.toast(res?.msg || '撤销失败，请重试');
+      sheep.$helper.toast('撤销成功');
+      await loadStatus();
     } catch (cancelError) {
       sheep.$helper.toast(cancelError?.msg || cancelError?.message || '撤销失败，请稍后重试');
     } finally {
       canceling.value = false;
+      actionLoading.value = false;
     }
   }
 
   async function goApply() {
-    if (loading.value || actionLoading.value) return;
+    if (loading.value || actionLoading.value || canceling.value) return;
 
     actionLoading.value = true;
 
     try {
       const refreshed = await loadStatus();
+
       if (!refreshed) return;
 
-      // navigate to apply page only if status allows
+      if (identityData.value.isClubOwner === true) {
+        await deltaStore.enterClubMode();
+        return;
+      }
+
       if (!hasApplication.value || canReapply.value) {
         sheep.$router.go(DeltaRoute.CLUB_APPLY);
         return;
       }
 
-      // if status changed to PENDING/APPROVED, stay on status page with latest data
       if (
         appStatus.value === DeltaClubApplicationStatus.PENDING ||
         appStatus.value === DeltaClubApplicationStatus.APPROVED
@@ -367,21 +361,16 @@
         return;
       }
 
-      // if became club owner
-      if (identityData.value.isClubOwner === true) {
-        deltaStore.enterClubMode();
-        return;
-      }
-
-      // fallback
-      sheep.$router.go(DeltaRoute.CLUB_APPLY);
+      sheep.$helper.toast('当前状态不能重新申请');
+    } catch (applyError) {
+      sheep.$helper.toast(applyError?.msg || applyError?.message || '申请状态刷新失败，请重试');
     } finally {
       actionLoading.value = false;
     }
   }
 
   async function enterClub() {
-    if (loading.value || actionLoading.value) return;
+    if (loading.value || actionLoading.value || canceling.value) return;
 
     actionLoading.value = true;
 
