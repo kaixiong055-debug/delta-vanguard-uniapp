@@ -46,6 +46,26 @@ const state = reactive({
   error: '',
 });
 
+function normalizeLongId(value) {
+  const text = String(value ?? '').trim();
+  return /^[1-9]\d*$/.test(text) ? text : '';
+}
+
+function normalizeTotal(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    return 0;
+  }
+  return number;
+}
+
+function restoreAfterLoadFailure(reset, requestedPage) {
+  if (!reset && requestedPage > 1) {
+    state.pageNo = requestedPage - 1;
+  }
+  state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+}
+
 function statusClass(status) {
   const s = Number(status);
   if (s === DeltaCancelStatus.APPROVED) return 'tag-success';
@@ -55,7 +75,11 @@ function statusClass(status) {
 }
 
 async function load(reset = false) {
-  if (state.loading) return;
+  if (state.loading) {
+    uni.stopPullDownRefresh();
+    return;
+  }
+
   if (reset) {
     state.pageNo = 1;
     state.list = [];
@@ -63,42 +87,58 @@ async function load(reset = false) {
     state.loadStatus = 'more';
     state.error = '';
   }
-  if (!reset && state.loadStatus === 'noMore') return;
+
+  if (!reset && state.loadStatus === 'noMore') {
+    uni.stopPullDownRefresh();
+    return;
+  }
+
+  const requestedPage = state.pageNo;
   state.loading = true;
   state.error = '';
+  state.loadStatus = 'loading';
+
   try {
     const res = await ServiceOrderApi.getCancelPage(
-      { pageNo: state.pageNo, pageSize: state.pageSize },
+      { pageNo: requestedPage, pageSize: state.pageSize },
       { showError: false },
     );
     if (res?.code === 0) {
       const rows = Array.isArray(res.data?.list) ? res.data.list : [];
-      const total = Number(res.data?.total) || 0;
+      const total = normalizeTotal(res.data?.total);
       state.total = total;
       state.list = reset ? rows : state.list.concat(rows);
       state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
-    } else {
-      state.error = res?.msg || '加载失败';
-      if (!reset && state.pageNo > 1) state.pageNo--;
+      return;
     }
-  } catch (e) {
-    state.error = '加载失败';
-    if (!reset && state.pageNo > 1) state.pageNo--;
+
+    state.error = res?.msg || '取消申请加载失败';
+    restoreAfterLoadFailure(reset, requestedPage);
+  } catch (error) {
+    state.error = error?.msg || error?.message || '取消申请加载失败';
+    restoreAfterLoadFailure(reset, requestedPage);
   } finally {
     state.loading = false;
     uni.stopPullDownRefresh();
   }
 }
 
-function go(id) {
+function go(value) {
+  const id = normalizeLongId(value);
+  if (!id) {
+    sheep.$helper.toast('取消申请 ID 不存在');
+    return;
+  }
+
   sheep.$router.go('/pages-delta/cancel/detail', { id });
 }
 
 function more() {
-  if (!state.loading && state.loadStatus === 'more') {
-    state.pageNo++;
-    load();
+  if (state.loading || state.loadStatus !== 'more') {
+    return;
   }
+  state.pageNo++;
+  load();
 }
 
 onShow(() => load(true));

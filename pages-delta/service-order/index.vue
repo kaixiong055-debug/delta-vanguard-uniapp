@@ -123,8 +123,36 @@
     return validStatuses.includes(status) ? status : undefined;
   }
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  function normalizeTotal(value) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+      return 0;
+    }
+    return number;
+  }
+
+  function restoreAfterLoadFailure(reset, requestedPage) {
+    if (!reset && requestedPage > 1) {
+      state.pageNo = requestedPage - 1;
+    }
+    state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+  }
+
   async function getList(reset = false) {
-    if (state.loading) return;
+    if (state.loading) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    if (!reset && state.loadStatus === 'noMore') {
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     if (reset) {
       state.pageNo = 1;
@@ -149,19 +177,19 @@
       const res = await ServiceOrderApi.getPage(params, { showError: false });
 
       if (res?.code === 0) {
-        const list = Array.isArray(res.data?.list) ? res.data.list : [];
-        state.total = Number(res.data?.total || 0);
-        state.list = reset ? list : state.list.concat(list);
+        const rows = Array.isArray(res.data?.list) ? res.data.list : [];
+        const total = normalizeTotal(res.data?.total);
+        state.total = total;
+        state.list = reset ? rows : state.list.concat(rows);
         state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
-      } else {
-        state.error = res?.msg || '服务订单加载失败';
-        if (!reset && requestedPage > 1) state.pageNo = requestedPage - 1;
-        state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+        return;
       }
+
+      state.error = res?.msg || '服务订单加载失败';
+      restoreAfterLoadFailure(reset, requestedPage);
     } catch (error) {
       state.error = error?.msg || error?.message || '服务订单加载失败';
-      if (!reset && requestedPage > 1) state.pageNo = requestedPage - 1;
-      state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+      restoreAfterLoadFailure(reset, requestedPage);
     } finally {
       state.loading = false;
       uni.stopPullDownRefresh();
@@ -175,12 +203,20 @@
   }
 
   function loadMore() {
-    if (state.loadStatus !== 'more' || state.loading) return;
+    if (state.loading || state.loadStatus !== 'more') {
+      return;
+    }
     state.pageNo += 1;
     getList();
   }
 
-  function goDetail(id) {
+  function goDetail(value) {
+    const id = normalizeLongId(value);
+    if (!id) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
     sheep.$router.go('/pages-delta/service-order/detail', { id });
   }
 
