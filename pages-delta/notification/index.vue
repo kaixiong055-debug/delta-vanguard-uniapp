@@ -33,7 +33,7 @@
         v-for="item in state.list"
         :key="item.id"
         class="card"
-        :class="{ unread: item.readStatus !== true, opening: openingId === item.id }"
+        :class="{ unread: item.readStatus !== true, opening: isOpening(item) }"
         @tap="openNotification(item)"
       >
         <view class="head">
@@ -43,7 +43,7 @@
         <view class="content ss-line-2">{{ item.content || '-' }}</view>
         <view class="foot">
           <text>{{ formatDeltaTime(item.createTime) }}</text>
-          <text>{{ openingId === item.id ? '正在打开' : '查看 ›' }}</text>
+          <text>{{ isOpening(item) ? '正在打开' : '查看 ›' }}</text>
         </view>
       </view>
 
@@ -89,53 +89,101 @@
     error: '',
   });
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  function normalizeCount(value) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+      return 0;
+    }
+    return number;
+  }
+
+  function restoreAfterLoadFailure(reset, requestedPage) {
+    if (!reset && requestedPage > 1) {
+      state.pageNo = requestedPage - 1;
+    }
+    state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+  }
+
+  function getNotificationId(item = {}) {
+    return normalizeLongId(item.id);
+  }
+
+  function isOpening(item = {}) {
+    const notificationId = getNotificationId(item);
+    return Boolean(notificationId && openingId.value === notificationId);
+  }
+
   async function loadUnread() {
     try {
       const res = await NotificationApi.getUnreadCount({
         showError: false,
         showLoading: false,
       });
-      if (res?.code === 0) unreadCount.value = Number(res.data || 0);
+      if (res?.code === 0) {
+        unreadCount.value = normalizeCount(res.data);
+      }
     } catch {
       // 未读数量是辅助信息，失败不影响通知列表。
     }
   }
 
   async function load(reset = false) {
-    if (state.loading) return;
-    if (!reset && state.loadStatus !== 'more') return;
+    if (state.loading) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    if (!reset && state.loadStatus === 'noMore') {
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     if (reset) {
       state.pageNo = 1;
       state.list = [];
       state.total = 0;
       state.loadStatus = 'more';
+      state.error = '';
     }
+
+    const requestedPage = state.pageNo;
 
     state.loading = true;
     state.error = '';
+    state.loadStatus = 'loading';
 
     try {
       const res = await NotificationApi.getPage(
         {
-          pageNo: state.pageNo,
+          pageNo: requestedPage,
           pageSize: state.pageSize,
           readStatus: state.readStatus,
         },
         { showError: false, showLoading: false },
       );
 
-      if (res?.code !== 0) throw new Error(res?.msg || '通知加载失败');
+      if (res?.code !== 0) {
+        state.error = res?.msg || '通知加载失败';
+        restoreAfterLoadFailure(reset, requestedPage);
+        return;
+      }
 
       const rows = Array.isArray(res.data?.list) ? res.data.list : [];
-      state.total = Number(res.data?.total || 0);
+      const total = normalizeCount(res.data?.total);
+      state.total = total;
       state.list = reset ? rows : state.list.concat(rows);
       state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
     } catch (error) {
       state.error = error?.msg || error?.message || '通知加载失败';
-      if (!reset && state.pageNo > 1) state.pageNo -= 1;
+      restoreAfterLoadFailure(reset, requestedPage);
     } finally {
       state.loading = false;
+      uni.stopPullDownRefresh();
     }
   }
 
@@ -144,18 +192,21 @@
     uni.stopPullDownRefresh();
   }
 
-  function change(value) {
+  async function change(value) {
     if (state.loading || state.readStatus === value) return;
     state.readStatus = value;
-    load(true);
+    await load(true);
   }
 
   function openFallbackDetail(item) {
-    if (!item?.id) {
+    const notificationId = normalizeLongId(item?.id);
+
+    if (!notificationId) {
       sheep.$helper.toast(item?.content || '暂无法打开该通知');
       return;
     }
-    sheep.$router.go('/pages-delta/notification/detail', { id: item.id });
+
+    sheep.$router.go('/pages-delta/notification/detail', { id: notificationId });
   }
 
   async function guardTarget(target) {
@@ -167,10 +218,14 @@
   }
 
   async function markItemRead(item) {
-    if (!item?.id || item.readStatus === true) return;
+    const notificationId = normalizeLongId(item?.id);
+
+    if (!notificationId || item?.readStatus === true) {
+      return;
+    }
 
     try {
-      const res = await NotificationApi.markRead(item.id, {
+      const res = await NotificationApi.markRead(notificationId, {
         showError: false,
         showLoading: false,
       });
@@ -185,7 +240,8 @@
 
   async function openNotification(item) {
     if (!item || openingId.value) return;
-    openingId.value = item.id || 'opening';
+
+    openingId.value = getNotificationId(item) || 'opening';
 
     try {
       await markItemRead(item);
@@ -225,10 +281,11 @@
   }
 
   function loadMore() {
-    if (!state.loading && state.loadStatus === 'more') {
-      state.pageNo += 1;
-      load();
+    if (state.loading || state.loadStatus !== 'more') {
+      return;
     }
+    state.pageNo += 1;
+    load();
   }
 
   onShow(refresh);

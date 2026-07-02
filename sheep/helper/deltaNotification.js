@@ -41,8 +41,9 @@ function normalizeBizType(value) {
     .toUpperCase();
 }
 
-function hasBizId(value) {
-  return value !== null && value !== undefined && String(value).trim() !== '';
+function normalizeLongId(value) {
+  const text = String(value ?? '').trim();
+  return /^[1-9]\d*$/.test(text) ? text : '';
 }
 
 function createTarget(url, params, guard, actionText) {
@@ -59,11 +60,11 @@ export function getDeltaNotificationTypeText(type) {
  */
 export function resolveDeltaNotificationTarget(notification = {}, currentMode = DeltaAppMode.SHOP) {
   const bizType = normalizeBizType(notification.bizType);
-  const bizId = notification.bizId;
+  const bizId = normalizeLongId(notification.bizId);
   const title = String(notification.title || '').trim();
 
   if (bizType === DeltaNotificationBizType.SETTLEMENT) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-worker/income/detail',
           { id: bizId },
@@ -74,7 +75,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (bizType === DeltaNotificationBizType.ORDER_MARKET_LISTING) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           DeltaRoute.CLUB_ORDER_DETAIL,
           { listingId: bizId },
@@ -85,7 +86,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (bizType === DeltaNotificationBizType.AFTER_SALE) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-delta/after-sale/detail',
           { id: bizId },
@@ -96,7 +97,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (bizType === DeltaNotificationBizType.REFUND) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-delta/refund/detail',
           { id: bizId },
@@ -114,7 +115,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (workerOrderDetailTitles.has(title)) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-worker/order/detail',
           { id: bizId },
@@ -129,7 +130,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (buyerOrderDetailTitles.has(title)) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-delta/service-order/detail',
           { id: bizId },
@@ -140,7 +141,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (currentMode === DeltaAppMode.WORKER) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-worker/order/detail',
           { id: bizId },
@@ -151,7 +152,7 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
   }
 
   if (currentMode === DeltaAppMode.SHOP) {
-    return hasBizId(bizId)
+    return bizId
       ? createTarget(
           '/pages-delta/service-order/detail',
           { id: bizId },

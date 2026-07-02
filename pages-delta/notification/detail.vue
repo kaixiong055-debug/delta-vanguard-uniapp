@@ -10,7 +10,7 @@
         <view class="content">{{ detail.content || '-' }}</view>
         <view v-if="detail.bizType" class="biz">
           <text>关联业务</text>
-          <text>{{ detail.bizType }}{{ detail.bizId ? ' #' + detail.bizId : '' }}</text>
+          <text>{{ detail.bizType }}{{ businessId ? ` #${businessId}` : '' }}</text>
         </view>
         <button
           v-if="businessTarget"
@@ -34,7 +34,7 @@
 
 <script setup>
   import { computed, ref } from 'vue';
-  import { onLoad, onShow } from '@dcloudio/uni-app';
+  import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import NotificationApi from '@/sheep/api/delta/notification';
   import { formatDeltaTime } from '@/sheep/helper/delta';
@@ -50,40 +50,77 @@
   const openingBusiness = ref(false);
   const error = ref('');
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
   const businessTarget = computed(() =>
     resolveDeltaNotificationTarget(detail.value, deltaStore.currentMode),
   );
 
+  const businessId = computed(() => normalizeLongId(detail.value.bizId));
+
   async function markReadQuietly(notification) {
-    if (!notification?.id || notification.readStatus === true) return;
+    const notificationId = normalizeLongId(notification?.id);
+
+    if (!notificationId || notification?.readStatus === true) {
+      return;
+    }
+
     try {
-      const res = await NotificationApi.markRead(notification.id, {
+      const res = await NotificationApi.markRead(notificationId, {
         showError: false,
         showLoading: false,
       });
-      if (res?.code === 0) notification.readStatus = true;
+      if (res?.code === 0) {
+        notification.readStatus = true;
+      }
     } catch {
       // 通知详情仍可正常查看，返回列表时会重新同步已读状态。
     }
   }
 
   async function load() {
-    if (!id.value || loading.value) return;
+    if (loading.value) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    const notificationId = normalizeLongId(id.value);
+
+    if (!notificationId) {
+      detail.value = {};
+      error.value = '通知 ID 不存在';
+      uni.stopPullDownRefresh();
+      return;
+    }
+
     loading.value = true;
     error.value = '';
 
     try {
-      const res = await NotificationApi.getDetail(id.value, {
+      const res = await NotificationApi.getDetail(notificationId, {
         showError: false,
         showLoading: false,
       });
-      if (res?.code !== 0) throw new Error(res?.msg || '通知详情加载失败');
-      detail.value = res.data || {};
+
+      const responseId = normalizeLongId(res?.data?.id);
+
+      if (res?.code !== 0 || !responseId) {
+        detail.value = {};
+        error.value = res?.msg || '通知详情加载失败';
+        return;
+      }
+
+      detail.value = res.data;
       await markReadQuietly(detail.value);
     } catch (loadError) {
+      detail.value = {};
       error.value = loadError?.msg || loadError?.message || '通知详情加载失败';
     } finally {
       loading.value = false;
+      uni.stopPullDownRefresh();
     }
   }
 
@@ -112,13 +149,14 @@
   }
 
   onLoad((options = {}) => {
-    id.value = options.id || '';
-    if (!id.value) error.value = '通知 ID 不存在';
+    id.value = normalizeLongId(options.id);
   });
 
   onShow(() => {
     if (id.value) load();
   });
+
+  onPullDownRefresh(load);
 </script>
 
 <style lang="scss" scoped>
