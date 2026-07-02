@@ -81,7 +81,11 @@
         </view>
         <view v-for="item in progressPreview" :key="item.id" class="record">
           <view class="record-head">
-            <view>{{ item.progressTypeName || progressTypeMap[item.progressType] }}</view>
+            <view>{{
+              item.progressTypeName ||
+              progressTypeMap[Number(item.progressType)] ||
+              '-'
+            }}</view>
             <text>{{ formatProgressPercent(item.progressPercent) }}</text>
           </view>
           <view class="record-content">{{ item.content || '-' }}</view>
@@ -96,21 +100,26 @@
         </view>
         <view v-for="item in evidencePreview" :key="item.id" class="record">
           <view class="record-head">
-            <view>{{ item.evidenceTypeName || evidenceTypeMap[item.evidenceType] }}</view>
+            <view>{{
+              item.evidenceTypeName ||
+              evidenceTypeMap[Number(item.evidenceType)] ||
+              '-'
+            }}</view>
             <text>{{ formatDeltaTime(item.createTime) }}</text>
           </view>
           <view v-if="item.content" class="record-content">{{ item.content }}</view>
           <image
-            v-if="item.imageUrls?.length"
+            v-if="normalizeImageUrls(item.imageUrls).length"
             class="evidence-thumb"
-            :src="item.imageUrls[0]"
+            :src="normalizeImageUrls(item.imageUrls)[0]"
             mode="aspectFill"
+            lazy-load
             @tap="previewImages(item.imageUrls)"
           />
           <video
-            v-else-if="item.videoUrl"
+            v-else-if="normalizeMediaUrl(item.videoUrl)"
             class="evidence-video"
-            :src="item.videoUrl"
+            :src="normalizeMediaUrl(item.videoUrl)"
             controls
           />
         </view>
@@ -124,12 +133,24 @@
       <view v-if="acceptances.length || reworks.length" class="card section">
         <view class="section-title">验收与返工记录</view>
         <view v-for="item in acceptances" :key="`a-${item.id}`" class="record">
-          <view>{{ item.acceptanceResultName || '验收记录' }}</view>
-          <text>{{ item.remark || '-' }} · {{ formatDeltaTime(item.createTime) }}</text>
+          <view class="record-head">
+            <view>{{ item.acceptanceResultName || '验收记录' }}</view>
+            <text>{{ formatDeltaTime(getAcceptanceTime(item)) }}</text>
+          </view>
+          <view v-if="getRecordOperator(item)" class="record-meta">
+            操作人：{{ getRecordOperator(item) }}
+          </view>
+          <view v-if="item.remark" class="record-content">{{ item.remark }}</view>
         </view>
         <view v-for="item in reworks" :key="`r-${item.id}`" class="record">
-          <view>第 {{ item.reworkNo }} 次返工</view>
-          <text>{{ item.reason || '-' }} · {{ formatDeltaTime(item.createTime) }}</text>
+          <view class="record-head">
+            <view>{{ formatReworkTitle(item.reworkNo) }}</view>
+            <text>{{ formatDeltaTime(item.createTime) }}</text>
+          </view>
+          <view v-if="getRecordOperator(item)" class="record-meta">
+            操作人：{{ getRecordOperator(item) }}
+          </view>
+          <view class="record-content">{{ item.reason || '-' }}</view>
         </view>
       </view>
     </view>
@@ -182,6 +203,44 @@
     evidenceList.value = [];
     acceptances.value = [];
     reworks.value = [];
+  }
+
+  function normalizeImageUrls(urls) {
+    if (!Array.isArray(urls)) return [];
+
+    return urls.filter((url) => typeof url === 'string' && url.trim());
+  }
+
+  function normalizeMediaUrl(url) {
+    return typeof url === 'string' ? url.trim() : '';
+  }
+
+  function getRecordOperator(item = {}) {
+    const name =
+      typeof item.operatorName === 'string' ? item.operatorName.trim() : '';
+
+    if (name) return name;
+
+    const typeName =
+      typeof item.operatorTypeName === 'string'
+        ? item.operatorTypeName.trim()
+        : '';
+
+    return typeName;
+  }
+
+  function getAcceptanceTime(item = {}) {
+    return item.acceptanceTime || item.createTime;
+  }
+
+  function formatReworkTitle(value) {
+    const number = Number(value);
+
+    if (!Number.isSafeInteger(number) || number <= 0) {
+      return '返工记录';
+    }
+
+    return `第 ${number} 次返工`;
   }
 
   const canAccept = computed(() =>
@@ -359,10 +418,12 @@
   }
 
   function previewImages(urls) {
-    if (!Array.isArray(urls) || urls.length === 0) return;
+    const validUrls = normalizeImageUrls(urls);
+    if (!validUrls.length) return;
+
     uni.previewImage({
-      current: urls[0],
-      urls,
+      current: validUrls[0],
+      urls: validUrls,
     });
   }
 
@@ -566,6 +627,12 @@
     color: #50555f;
     font-size: 24rpx;
     line-height: 38rpx;
+  }
+
+  .record-meta {
+    margin-top: 4rpx;
+    color: #999999;
+    font-size: 22rpx;
   }
 
   .evidence-thumb {

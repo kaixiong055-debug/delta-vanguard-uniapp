@@ -1,26 +1,90 @@
 <template>
   <view class="timeline">
-    <view v-for="item in list" :key="item.id || item.createTime" class="timeline-item">
+    <view
+      v-for="(item, index) in safeList"
+      :key="getTimelineKey(item, index)"
+      class="timeline-item"
+    >
       <view class="dot" />
       <view class="timeline-content">
-        <view class="timeline-title">{{ item.title || item.statusName || '进度更新' }}</view>
-        <view class="timeline-time">{{ item.createTime || item.time || '' }}</view>
-        <view class="timeline-desc" v-if="item.content || item.remark">
-          {{ item.content || item.remark }}
+        <view class="timeline-title">{{ getTimelineTitle(item) }}</view>
+        <view class="timeline-meta">
+          <text>{{ formatDeltaTime(item.eventTime) }}</text>
+          <text v-if="getOperatorText(item)">
+            操作人：{{ getOperatorText(item) }}
+          </text>
+        </view>
+        <view
+          v-if="normalizeText(item.content)"
+          class="timeline-desc"
+        >
+          {{ normalizeText(item.content) }}
         </view>
       </view>
     </view>
-    <view v-if="!list.length" class="timeline-empty">暂无进度</view>
+    <view v-if="!safeList.length" class="timeline-empty">暂无履约时间线</view>
   </view>
 </template>
 
 <script setup>
-  defineProps({
+  import { computed } from 'vue';
+  import { formatDeltaTime } from '@/sheep/helper/delta';
+
+  const props = defineProps({
     list: {
       type: Array,
       default: () => [],
     },
   });
+
+  const safeList = computed(() =>
+    Array.isArray(props.list) ? props.list : [],
+  );
+
+  function getTimelineKey(item, index) {
+    return [
+      item?.nodeType || 'NODE',
+      item?.eventTime || 'NO_TIME',
+      index,
+    ].join('-');
+  }
+
+  const nodeTypeMap = {
+    PROGRESS: '履约进度',
+    LOG: '状态记录',
+    EVIDENCE: '服务凭证',
+  };
+
+  function getTimelineTitle(item = {}) {
+    const title =
+      typeof item.title === 'string' ? item.title.trim() : '';
+
+    if (title) return title;
+
+    return nodeTypeMap[item.nodeType] || '履约记录';
+  }
+
+  const operatorTypeMap = {
+    CUSTOMER: '买家',
+    WORKER: '打手',
+    ADMIN: '平台',
+    SYSTEM: '系统',
+  };
+
+  function getOperatorText(item = {}) {
+    const name =
+      typeof item.operatorName === 'string'
+        ? item.operatorName.trim()
+        : '';
+
+    if (name) return name;
+
+    return operatorTypeMap[item.operatorType] || '';
+  }
+
+  function normalizeText(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
 </script>
 
 <style lang="scss" scoped>
@@ -57,21 +121,29 @@
     font-weight: 800;
   }
 
-  .timeline-time,
-  .timeline-desc,
-  .timeline-empty {
+  .timeline-meta {
+    margin-top: 6rpx;
     color: #8d939e;
     font-size: 24rpx;
     line-height: 36rpx;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16rpx;
   }
 
   .timeline-desc {
     margin-top: 8rpx;
     color: #4a4f58;
+    font-size: 24rpx;
+    line-height: 36rpx;
+    word-break: break-all;
   }
 
   .timeline-empty {
     padding: 28rpx 0;
+    color: #8d939e;
+    font-size: 24rpx;
+    line-height: 36rpx;
     text-align: center;
   }
 </style>
