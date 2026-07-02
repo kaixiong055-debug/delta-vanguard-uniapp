@@ -159,7 +159,7 @@
 
 <script setup>
   import { computed, ref } from 'vue';
-  import { onLoad, onShow } from '@dcloudio/uni-app';
+  import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
   import ProgressTimeline from '../components/progress-timeline.vue';
@@ -187,6 +187,16 @@
   const loading = ref(false);
   const error = ref('');
   const sectionWarning = ref('');
+
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+
+    if (!/^[1-9]\d*$/.test(text)) {
+      return '';
+    }
+
+    return text;
+  }
 
   function formatProgressPercent(value) {
     if (value === null || value === undefined || value === '') return '-';
@@ -346,19 +356,33 @@
   ]);
 
   async function refresh() {
-    if (!id.value || loading.value) return;
+    if (loading.value) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    const serviceOrderId = normalizeLongId(id.value);
+
+    if (!serviceOrderId) {
+      detail.value = {};
+      clearSectionData();
+      sectionWarning.value = '';
+      error.value = '服务单 ID 不存在';
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     loading.value = true;
     error.value = '';
     sectionWarning.value = '';
 
     const requests = [
-      ServiceOrderApi.getDetail(id.value, { showError: false }),
-      ServiceOrderApi.getTimeline(id.value, { showError: false }),
-      ServiceOrderApi.getProgressList(id.value, { showError: false }),
-      ServiceOrderApi.getEvidenceList(id.value, { showError: false }),
-      ServiceOrderApi.getAcceptanceList(id.value, { showError: false }),
-      ServiceOrderApi.getReworkList(id.value, { showError: false }),
+      ServiceOrderApi.getDetail(serviceOrderId, { showError: false }),
+      ServiceOrderApi.getTimeline(serviceOrderId, { showError: false }),
+      ServiceOrderApi.getProgressList(serviceOrderId, { showError: false }),
+      ServiceOrderApi.getEvidenceList(serviceOrderId, { showError: false }),
+      ServiceOrderApi.getAcceptanceList(serviceOrderId, { showError: false }),
+      ServiceOrderApi.getReworkList(serviceOrderId, { showError: false }),
     ];
 
     try {
@@ -387,12 +411,15 @@
         return [];
       };
 
-      if (detailRes?.code === 0 && detailRes.data?.id) {
+      const responseId = normalizeLongId(detailRes?.data?.id);
+
+      if (detailRes?.code === 0 && responseId) {
         detail.value = detailRes.data;
       } else {
         detail.value = {};
         clearSectionData();
-        error.value = detailRes?.msg || '详情加载失败';
+        sectionWarning.value = '';
+        error.value = detailRes?.msg || '服务订单详情加载失败';
         return;
       }
 
@@ -410,11 +437,21 @@
       error.value = err?.msg || err?.message || '详情加载失败';
     } finally {
       loading.value = false;
+      uni.stopPullDownRefresh();
     }
   }
 
   function go(url) {
-    sheep.$router.go(url, { id: id.value });
+    const serviceOrderId = normalizeLongId(detail.value.id || id.value);
+
+    if (!serviceOrderId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go(url, {
+      id: serviceOrderId,
+    });
   }
 
   function previewImages(urls) {
@@ -428,16 +465,11 @@
   }
 
   onLoad((options = {}) => {
-    id.value = options.id || '';
+    id.value = normalizeLongId(options.id);
   });
 
-  onShow(() => {
-    if (!id.value) {
-      error.value = '服务单 ID 不存在';
-      return;
-    }
-    refresh();
-  });
+  onShow(refresh);
+  onPullDownRefresh(refresh);
 </script>
 
 <style lang="scss" scoped>

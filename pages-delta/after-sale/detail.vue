@@ -65,14 +65,14 @@
           </view>
         </view>
 
-        <view v-if="detail.serviceOrderId" class="link" @tap="goServiceOrder">查看服务订单</view>
+        <view v-if="serviceOrderId" class="link" @tap="goServiceOrder">查看服务订单</view>
       </view>
     </view>
   </s-layout>
 </template>
 <script setup>
-import { ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { computed, ref } from 'vue';
+import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
@@ -87,42 +87,85 @@ const detail = ref({});
 const loading = ref(false);
 const error = ref('');
 
+function normalizeLongId(value) {
+  const text = String(value ?? '').trim();
+
+  if (!/^[1-9]\d*$/.test(text)) {
+    return '';
+  }
+
+  return text;
+}
+
+const serviceOrderId = computed(() =>
+  normalizeLongId(detail.value.serviceOrderId),
+);
+
 async function load() {
-  if (!id.value) {
-    detail.value = {};
+  if (loading.value) {
+    uni.stopPullDownRefresh();
     return;
   }
-  if (loading.value) return;
+
+  const recordId = normalizeLongId(id.value);
+
+  if (!recordId) {
+    detail.value = {};
+    error.value = '售后记录 ID 不存在';
+    uni.stopPullDownRefresh();
+    return;
+  }
+
   loading.value = true;
   error.value = '';
+
   try {
-    const res = await ServiceOrderApi.getAfterSaleDetail(id.value, { showError: false });
-    if (res?.code === 0) {
-      detail.value = res.data || {};
-    } else {
+    const res = await ServiceOrderApi.getAfterSaleDetail(recordId, {
+      showError: false,
+    });
+
+    const responseId = normalizeLongId(res?.data?.id);
+
+    if (res?.code !== 0 || !responseId) {
       detail.value = {};
-      error.value = res?.msg || '加载失败';
+      error.value = res?.msg || '售后详情加载失败';
+      return;
     }
-  } catch (e) {
+
+    detail.value = res.data;
+  } catch (err) {
     detail.value = {};
-    error.value = '加载失败';
+    error.value =
+      err?.msg ||
+      err?.message ||
+      '售后详情加载失败';
   } finally {
     loading.value = false;
+    uni.stopPullDownRefresh();
   }
 }
 
 function goServiceOrder() {
-  if (detail.value.serviceOrderId) {
-    sheep.$router.go('/pages-delta/service-order/detail', {
-      id: detail.value.serviceOrderId,
-    });
+  const orderId = normalizeLongId(
+    detail.value.serviceOrderId,
+  );
+
+  if (!orderId) {
+    sheep.$helper.toast('服务单 ID 不存在');
+    return;
   }
+
+  sheep.$router.go('/pages-delta/service-order/detail', {
+    id: orderId,
+  });
 }
 
-onLoad((o = {}) => {
-  id.value = o.id || '';
-  if (id.value) load();
+onLoad((options = {}) => {
+  id.value = normalizeLongId(options.id);
 });
+
+onShow(load);
+onPullDownRefresh(load);
 </script>
 <style lang="scss" scoped>
 .page {
