@@ -10,7 +10,7 @@
           <text :class="statusClass(item.refundStatus)">{{ item.refundStatusName || getDeltaRefundStatusText(item.refundStatus) }}</text>
         </view>
         <view class="meta">服务单 ID：{{ item.serviceOrderId || '-' }}</view>
-        <view class="amount">{{ formatDeltaAmount(item.refundAmount) }}</view>
+        <view class="amount">{{ formatDeltaOptionalAmount(item.refundAmount) }}</view>
         <view class="foot">{{ formatDeltaTime(item.createTime) }}</view>
       </view>
       <s-empty
@@ -27,7 +27,7 @@ import { onShow, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   DeltaRefundStatus,
   getDeltaRefundStatusText,

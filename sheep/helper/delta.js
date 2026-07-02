@@ -191,6 +191,46 @@ export function getDeltaRefundStatusText(status) {
   return refundStatusMap[Number(status)] || '-';
 }
 
+// ====== AfterSale Type ======
+
+export const DeltaAfterSaleType = {
+  QUALITY_ISSUE: 1,
+  NOT_AS_DESCRIBED: 2,
+  WORKER_NO_SHOW: 3,
+  OTHER: 4,
+};
+
+const afterSaleTypeMap = {
+  [DeltaAfterSaleType.QUALITY_ISSUE]: '服务质量问题',
+  [DeltaAfterSaleType.NOT_AS_DESCRIBED]: '服务与描述不符',
+  [DeltaAfterSaleType.WORKER_NO_SHOW]: '打手未履约',
+  [DeltaAfterSaleType.OTHER]: '其他',
+};
+
+export function getDeltaAfterSaleTypeText(type) {
+  return afterSaleTypeMap[Number(type)] || '-';
+}
+
+// ====== Refund Method ======
+
+export const DeltaRefundMethod = {
+  WECHAT: 1,
+  BANK_CARD: 2,
+  ALIPAY: 3,
+  OTHER: 4,
+};
+
+const refundMethodMap = {
+  [DeltaRefundMethod.WECHAT]: '人工微信',
+  [DeltaRefundMethod.BANK_CARD]: '银行卡',
+  [DeltaRefundMethod.ALIPAY]: '支付宝',
+  [DeltaRefundMethod.OTHER]: '其他',
+};
+
+export function getDeltaRefundMethodText(method) {
+  return refundMethodMap[Number(method)] || '-';
+}
+
 // ====== Service Order Status ======
 
 export function getServiceOrderStatusText(status) {
@@ -212,6 +252,15 @@ export function getDispatchModeText(mode) {
 export function formatDeltaAmount(amount) {
   const value = Number(amount || 0);
   return `¥${(value / 100).toFixed(2)}`;
+}
+
+export function formatDeltaOptionalAmount(amount) {
+  if (amount === null || amount === undefined || amount === '') return '-';
+
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return '-';
+
+  return formatDeltaAmount(value);
 }
 
 export function formatDeltaTime(value) {

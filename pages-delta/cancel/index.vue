@@ -13,7 +13,7 @@
         <view class="reason">{{ item.applyReason || '-' }}</view>
         <view class="foot">
           <text>{{ formatDeltaTime(item.createTime) }}</text>
-          <view>{{ formatDeltaAmount(item.refundAmount) }}</view>
+          <view>{{ formatDeltaOptionalAmount(item.refundAmount) }}</view>
         </view>
       </view>
       <s-empty
@@ -30,7 +30,7 @@ import { onShow, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   DeltaCancelStatus,
   getDeltaCancelStatusText,

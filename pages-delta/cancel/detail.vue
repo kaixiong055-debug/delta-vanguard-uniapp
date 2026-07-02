@@ -15,7 +15,7 @@
             <view>{{ row.value }}</view>
           </view>
         </block>
-        <view class="link" @tap="goServiceOrder">查看服务订单</view>
+        <view v-if="detail.serviceOrderId" class="link" @tap="goServiceOrder">查看服务订单</view>
       </view>
     </view>
   </s-layout>
@@ -26,7 +26,7 @@ import { onLoad } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   getDeltaCancelStatusText,
 } from '@/sheep/helper/delta';
@@ -43,13 +43,11 @@ const rows = computed(() => [
     value: detail.value.statusName || getDeltaCancelStatusText(detail.value.status),
   },
   { label: '申请原因', value: detail.value.applyReason || '-' },
-  { label: '退款金额', value: formatDeltaAmount(detail.value.refundAmount) },
+  { label: '退款金额', value: formatDeltaOptionalAmount(detail.value.refundAmount) },
   { label: '审核备注', value: detail.value.reviewRemark || '-' },
   { label: '申请时间', value: formatDeltaTime(detail.value.createTime) },
   { label: '审核时间', value: formatDeltaTime(detail.value.reviewTime) },
 ]);
-
-let loadingPromise = null;
 
 async function load() {
   if (!id.value) {

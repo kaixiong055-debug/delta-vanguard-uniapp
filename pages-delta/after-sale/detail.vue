@@ -21,7 +21,7 @@
           </view>
           <view v-if="detail.afterSaleType != null" class="row">
             <text>售后类型</text>
-            <view>{{ detail.afterSaleType ?? '-' }}</view>
+            <view>{{ getDeltaAfterSaleTypeText(detail.afterSaleType) }}</view>
           </view>
           <view class="row">
             <text>申请原因</text>
@@ -37,11 +37,11 @@
         <view class="card">
           <view class="row">
             <text>请求退款</text>
-            <view class="amount">{{ formatDeltaAmount(detail.requestedRefundAmount) }}</view>
+            <view class="amount">{{ formatDeltaOptionalAmount(detail.requestedRefundAmount) }}</view>
           </view>
           <view v-if="detail.approvedRefundAmount != null" class="row">
             <text>批准退款</text>
-            <view class="amount">{{ formatDeltaAmount(detail.approvedRefundAmount) }}</view>
+            <view class="amount">{{ formatDeltaOptionalAmount(detail.approvedRefundAmount) }}</view>
           </view>
         </view>
 
@@ -65,7 +65,7 @@
           </view>
         </view>
 
-        <view class="link" @tap="goServiceOrder">查看服务订单</view>
+        <view v-if="detail.serviceOrderId" class="link" @tap="goServiceOrder">查看服务订单</view>
       </view>
     </view>
   </s-layout>
@@ -76,9 +76,10 @@ import { onLoad } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   getDeltaAfterSaleStatusText,
+  getDeltaAfterSaleTypeText,
 } from '@/sheep/helper/delta';
 
 const id = ref('');

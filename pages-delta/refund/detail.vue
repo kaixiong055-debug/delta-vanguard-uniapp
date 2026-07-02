@@ -20,11 +20,14 @@
           </view>
           <view class="row">
             <text>退款金额</text>
-            <view class="amount">{{ formatDeltaAmount(detail.refundAmount) }}</view>
+            <view class="amount">{{ formatDeltaOptionalAmount(detail.refundAmount) }}</view>
           </view>
           <view v-if="detail.refundMethodName || detail.refundMethod != null" class="row">
             <text>退款方式</text>
-            <view>{{ detail.refundMethodName || detail.refundMethod || '-' }}</view>
+            <view>{{
+              detail.refundMethodName ||
+              getDeltaRefundMethodText(detail.refundMethod)
+            }}</view>
           </view>
           <view v-if="detail.processRemark" class="row">
             <text>处理备注</text>
@@ -44,7 +47,7 @@
           </view>
         </view>
 
-        <view class="link" @tap="goServiceOrder">查看服务订单</view>
+        <view v-if="detail.serviceOrderId" class="link" @tap="goServiceOrder">查看服务订单</view>
       </view>
     </view>
   </s-layout>
@@ -55,9 +58,10 @@ import { onLoad } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   getDeltaRefundStatusText,
+  getDeltaRefundMethodText,
 } from '@/sheep/helper/delta';
 
 const id = ref('');

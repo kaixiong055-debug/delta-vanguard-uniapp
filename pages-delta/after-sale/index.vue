@@ -24,7 +24,7 @@
         <view class="reason">{{ item.reason || '-' }}</view>
         <view class="foot">
           <text>{{ formatDeltaTime(item.createTime) }}</text>
-          <view>{{ formatDeltaAmount(item.requestedRefundAmount) }}</view>
+          <view>{{ formatDeltaOptionalAmount(item.requestedRefundAmount) }}</view>
         </view>
       </view>
       <s-empty
@@ -36,12 +36,12 @@
   </s-layout>
 </template>
 <script setup>
-import { reactive, watch } from 'vue';
+import { reactive } from 'vue';
 import { onShow, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app';
 import sheep from '@/sheep';
 import ServiceOrderApi from '@/sheep/api/delta/serviceOrder';
 import {
-  formatDeltaAmount,
+  formatDeltaOptionalAmount,
   formatDeltaTime,
   DeltaAfterSaleStatus,
   getDeltaAfterSaleStatusText,
@@ -112,16 +112,10 @@ async function load(reset = false) {
   }
 }
 
-let changingStatus = false;
-
-function change(status) {
-  if (changingStatus) return;
+async function change(status) {
+  if (state.loading || state.status === status) return;
   state.status = status;
-  changingStatus = true;
-  load(true);
-  setTimeout(() => {
-    changingStatus = false;
-  }, 100);
+  await load(true);
 }
 
 function go(id) {
