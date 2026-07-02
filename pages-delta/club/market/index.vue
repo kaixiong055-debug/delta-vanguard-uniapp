@@ -3,20 +3,19 @@
     <view class="list-page">
       <view v-if="state.error" class="error-card">
         <text>{{ state.error }}</text>
-        <text class="retry" @tap="loadPage(true)">重试</text>
+        <text class="retry" @tap="initialize">重试</text>
       </view>
-      <market-card v-for="item in state.list" :key="item.id" :item="item" @tap="goDetail">
-        <template #action>
-          <view class="card-action">查看详情</view>
-        </template>
-      </market-card>
-      <s-empty
-        v-if="!state.loading && !state.error && state.list.length === 0"
-        text="暂无可抢挂牌"
-      />
-      <uni-load-more v-if="state.list.length > 0" :status="state.loadStatus" @tap="loadMore" />
+      <view v-if="state.pageReady && !state.error">
+        <market-card v-for="item in state.list" :key="item.id" :item="item" @tap="goDetail(item)">
+          <template #action>
+            <view class="card-action">查看详情</view>
+          </template>
+        </market-card>
+        <s-empty v-if="state.list.length === 0" text="暂无可抢挂牌" />
+        <uni-load-more v-if="state.list.length > 0" :status="state.loadStatus" @tap="loadMore" />
+      </view>
     </view>
-    <club-tabbar :active="DeltaRoute.CLUB_MARKET" />
+    <club-tabbar v-if="state.pageReady && !state.initializing" :active="DeltaRoute.CLUB_MARKET" />
   </s-layout>
 </template>
 
@@ -33,64 +32,132 @@
   const state = reactive({
     list: [],
     total: 0,
-    pageNo: 1,
+    pageNo: 0,
     pageSize: 10,
+    initializing: false,
     loading: false,
+    pageReady: false,
     loadStatus: 'more',
     error: '',
   });
 
-  async function loadPage(reset = false) {
-    if (state.loading) return;
-    if (reset) {
-      state.pageNo = 1;
-      state.list = [];
-      state.total = 0;
-      state.loadStatus = 'more';
-    }
-    const requestedPage = state.pageNo;
+  function normalizeTotal(value) {
+    const total = Number(value);
+    return Number.isSafeInteger(total) && total >= 0 ? total : 0;
+  }
+
+  async function loadPage(pageNo, reset = false) {
+    if (state.loading) return false;
+
+    const requestedPage = pageNo;
     state.loading = true;
     state.error = '';
-    state.loadStatus = 'loading';
+
     try {
       const res = await OrderMarketApi.getAvailablePage(
         { pageNo: requestedPage, pageSize: state.pageSize },
         { showError: false },
       );
-      if (res?.code === 0) {
-        const list = Array.isArray(res.data?.list) ? res.data.list : [];
-        state.total = Number(res.data?.total || 0);
-        state.list = reset ? list : state.list.concat(list);
-        state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
-      } else {
-        state.error = res?.msg || '加载失败，请重试';
-        if (requestedPage > 1) state.pageNo = requestedPage - 1;
-        state.loadStatus = state.list.length ? 'more' : 'noMore';
+
+      if (res?.code !== 0 || !res.data || typeof res.data !== 'object' || Array.isArray(res.data)) {
+        if (requestedPage === 1) {
+          state.list = [];
+          state.total = 0;
+          state.pageNo = 0;
+          state.pageReady = false;
+          state.loadStatus = 'more';
+          state.error = res?.msg || '加载失败，请重试';
+        } else {
+          state.loadStatus = 'more';
+          sheep.$helper.toast(res?.msg || '加载更多失败，请重试');
+        }
+        return false;
       }
-    } catch (error) {
-      state.error = error?.msg || error?.message || '加载失败，请重试';
-      if (requestedPage > 1) state.pageNo = requestedPage - 1;
-      state.loadStatus = state.list.length ? 'more' : 'noMore';
+
+      const rawList = Array.isArray(res.data.list) ? res.data.list : [];
+      const list = rawList.filter(
+        (item) => item !== null && typeof item === 'object' && !Array.isArray(item),
+      );
+      state.total = normalizeTotal(res.data.total);
+
+      if (reset) {
+        state.list = list;
+      } else {
+        state.list = state.list.concat(list);
+      }
+      state.pageNo = requestedPage;
+
+      if (requestedPage === 1) {
+        state.pageReady = true;
+        state.error = '';
+      }
+
+      const listLen = Array.isArray(state.list) ? state.list.length : 0;
+      state.loadStatus = listLen < state.total ? 'more' : 'noMore';
+      return true;
+    } catch (pageError) {
+      if (requestedPage === 1) {
+        state.list = [];
+        state.total = 0;
+        state.pageNo = 0;
+        state.pageReady = false;
+        state.loadStatus = 'more';
+        state.error = pageError?.msg || pageError?.message || '加载失败，请重试';
+      } else {
+        state.loadStatus = 'more';
+        sheep.$helper.toast(pageError?.msg || pageError?.message || '加载更多失败，请重试');
+      }
+      return false;
     } finally {
       state.loading = false;
-      uni.stopPullDownRefresh();
     }
   }
 
   function loadMore() {
-    if (state.loading || state.loadStatus !== 'more') return;
-    state.pageNo += 1;
-    loadPage();
+    if (!state.pageReady || state.initializing || state.loading || state.loadStatus !== 'more')
+      return;
+    loadPage(state.pageNo + 1);
   }
 
   function goDetail(item) {
-    sheep.$router.go(DeltaRoute.CLUB_MARKET_DETAIL, { id: item.id });
+    if (!state.pageReady || state.initializing || state.loading) return;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      sheep.$helper.toast('挂牌信息不存在');
+      return;
+    }
+    const idStr = String(item.id ?? '');
+    if (!/^\d+$/.test(idStr) || idStr === '0' || idStr === '') {
+      sheep.$helper.toast('挂牌信息不存在');
+      return;
+    }
+    sheep.$router.go(DeltaRoute.CLUB_MARKET_DETAIL, { id: idStr });
   }
 
   async function initialize() {
-    const allowed = await deltaStore.guardClubMarketPage({ requireServiceScope: true });
-    if (allowed) await loadPage(true);
-    else uni.stopPullDownRefresh();
+    if (state.initializing || state.loading) return;
+
+    state.initializing = true;
+    state.pageReady = false;
+    state.error = '';
+    state.list = [];
+    state.total = 0;
+    state.pageNo = 0;
+    state.loadStatus = 'more';
+
+    try {
+      const allowed = await deltaStore.guardClubMarketPage({
+        requireServiceScope: true,
+      });
+
+      if (!allowed) return;
+
+      await loadPage(1, true);
+    } catch (initError) {
+      state.error = initError?.msg || initError?.message || '初始化失败，请重试';
+    } finally {
+      state.initializing = false;
+      uni.stopPullDownRefresh();
+    }
   }
 
   onShow(initialize);

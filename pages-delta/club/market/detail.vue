@@ -3,21 +3,37 @@
     <view class="detail-page">
       <view v-if="loadError" class="error-card">
         <view>{{ loadError }}</view>
-        <button class="ss-reset-button retry-btn" @tap="loadDetail">重试</button>
+        <button
+          class="ss-reset-button retry-btn"
+          :disabled="loading || claiming"
+          @tap="loadDetail()"
+        >
+          {{ loading ? '加载中' : '重试' }}
+        </button>
       </view>
-      <market-card v-else-if="listing" :item="listing">
-        <template #action>
-          <button class="ss-reset-button claim-btn" :disabled="claiming" @tap.stop="confirmClaim">
-            {{ claiming ? '提交中' : '确认抢单' }}
-          </button>
-        </template>
-      </market-card>
+      <view v-else-if="listing">
+        <view v-if="notClaimableReason" class="warning-card">
+          {{ notClaimableReason }}
+        </view>
+        <market-card :item="listing">
+          <template #action>
+            <button
+              v-if="canClaim"
+              class="ss-reset-button claim-btn"
+              :disabled="loading || claiming || !canClaim"
+              @tap.stop="confirmClaim"
+            >
+              {{ claiming ? '提交中' : '确认抢单' }}
+            </button>
+          </template>
+        </market-card>
+      </view>
     </view>
   </s-layout>
 </template>
 
 <script setup>
-  import { ref } from 'vue';
+  import { ref, computed } from 'vue';
   import { onLoad, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import OrderMarketApi from '@/sheep/api/delta/orderMarket';
@@ -25,62 +41,173 @@
   import { DeltaRoute } from '@/sheep/helper/delta';
 
   const deltaStore = sheep.$store('delta');
-  const listingId = ref(null);
+  const listingId = ref('');
   const listing = ref(null);
+  const loading = ref(false);
+  const pageReady = ref(false);
   const loadError = ref('');
   const claiming = ref(false);
+  const notClaimableReason = ref('');
+
+  const canClaim = computed(
+    () => pageReady.value && listing.value && Number(listing.value.listingStatus) === 0,
+  );
+
+  function normalizeListingId(value) {
+    const id = String(value ?? '').trim();
+    return /^\d+$/.test(id) && id !== '0' ? id : '';
+  }
 
   onLoad((options) => {
-    const id = Number(options?.id);
-    if (Number.isInteger(id) && id > 0) listingId.value = id;
-    else loadError.value = '挂牌参数无效';
+    listingId.value = normalizeListingId(options?.id);
   });
 
   function askClaim() {
     return new Promise((resolve) => {
       uni.showModal({
         title: '确认抢单',
-        content: '抢单成功后可在“我的已接挂牌”中查看，是否继续？',
+        content: '抢单成功后可在"我的已接挂牌"中查看，是否继续？',
         success: ({ confirm }) => resolve(confirm),
         fail: () => resolve(false),
       });
     });
   }
 
-  async function loadDetail() {
+  async function loadDetail({ skipClaimingLock = false } = {}) {
     if (!listingId.value) {
       loadError.value = '挂牌参数无效';
-      return;
+      pageReady.value = false;
+      listing.value = null;
+      notClaimableReason.value = '';
+      return false;
     }
+
+    if (loading.value || (!skipClaimingLock && claiming.value)) return false;
+
+    loading.value = true;
+    pageReady.value = false;
     loadError.value = '';
-    const allowed = await deltaStore.guardClubMarketPage({ requireServiceScope: true });
-    if (!allowed) return;
+    listing.value = null;
+    notClaimableReason.value = '';
+
     try {
-      const res = await OrderMarketApi.getAvailableDetail(listingId.value, { showError: false });
-      if (res?.code === 0) listing.value = res.data || null;
-      else loadError.value = res?.msg || '挂牌详情加载失败';
-    } catch (error) {
-      loadError.value = error?.msg || error?.message || '挂牌详情加载失败';
+      const allowed = await deltaStore.guardClubMarketPage({
+        requireServiceScope: true,
+      });
+
+      if (!allowed) return false;
+
+      const res = await OrderMarketApi.getAvailableDetail(listingId.value, {
+        showError: false,
+      });
+
+      if (res?.code !== 0 || !res.data || typeof res.data !== 'object' || Array.isArray(res.data)) {
+        loadError.value = res?.msg || '挂牌详情加载失败，请重试';
+        listing.value = null;
+        pageReady.value = false;
+        notClaimableReason.value = '';
+        return false;
+      }
+
+      const detail = res.data;
+      const status = Number(detail.listingStatus);
+
+      if (status === 0) {
+        listing.value = detail;
+        pageReady.value = true;
+        loadError.value = '';
+        notClaimableReason.value = '';
+        return true;
+      }
+
+      if ([1, 2, 3, 4].includes(status)) {
+        listing.value = detail;
+        pageReady.value = true;
+        loadError.value = '';
+        notClaimableReason.value = '当前挂牌已不可抢，请返回列表刷新';
+        return true;
+      }
+
+      loadError.value = '挂牌状态异常，请刷新重试';
+      listing.value = null;
+      pageReady.value = false;
+      notClaimableReason.value = '';
+      return false;
+    } catch (loadErr) {
+      loadError.value = loadErr?.msg || loadErr?.message || '挂牌详情加载失败，请重试';
+      listing.value = null;
+      pageReady.value = false;
+      notClaimableReason.value = '';
+      return false;
+    } finally {
+      loading.value = false;
     }
   }
 
   async function confirmClaim() {
-    if (claiming.value) return;
-    const allowed = await deltaStore.guardClubMarketPage({ requireServiceScope: true });
-    if (!allowed || !(await askClaim())) return;
+    if (loading.value || claiming.value || !pageReady.value || !canClaim.value) return;
+
     claiming.value = true;
+
     try {
-      const res = await OrderMarketApi.claim(listingId.value, { showError: false });
-      sheep.$helper.toast(res?.msg || (res?.code === 0 ? '抢单成功' : '抢单失败'));
-      if (res?.code === 0) sheep.$router.redirect(DeltaRoute.CLUB_CLAIMED);
-    } catch (error) {
-      sheep.$helper.toast(error?.msg || error?.message || '抢单失败');
+      const allowed = await deltaStore.guardClubMarketPage({
+        requireServiceScope: true,
+      });
+
+      if (!allowed) return;
+
+      const detailRes = await OrderMarketApi.getAvailableDetail(listingId.value, {
+        showError: false,
+      });
+
+      if (
+        detailRes?.code !== 0 ||
+        !detailRes.data ||
+        typeof detailRes.data !== 'object' ||
+        Array.isArray(detailRes.data)
+      ) {
+        sheep.$helper.toast(detailRes?.msg || '挂牌状态查询失败，请重试');
+        await loadDetail({ skipClaimingLock: true });
+        return;
+      }
+
+      const latestStatus = Number(detailRes.data.listingStatus);
+      if (latestStatus !== 0) {
+        listing.value = detailRes.data;
+        pageReady.value = true;
+        loadError.value = '';
+        notClaimableReason.value = '当前挂牌已不可抢，请返回列表刷新';
+        return;
+      }
+
+      listing.value = detailRes.data;
+      pageReady.value = true;
+      loadError.value = '';
+      notClaimableReason.value = '';
+
+      if (!(await askClaim())) return;
+
+      const res = await OrderMarketApi.claim(listingId.value, {
+        showError: false,
+      });
+
+      if (res?.code === 0) {
+        sheep.$helper.toast('抢单成功');
+        sheep.$router.redirect(DeltaRoute.CLUB_CLAIMED);
+        return;
+      }
+
+      sheep.$helper.toast(res?.msg || '抢单失败，请重试');
+      await loadDetail({ skipClaimingLock: true });
+    } catch (claimError) {
+      sheep.$helper.toast(claimError?.msg || claimError?.message || '抢单失败，请稍后重试');
+      await loadDetail({ skipClaimingLock: true });
     } finally {
       claiming.value = false;
     }
   }
 
-  onShow(loadDetail);
+  onShow(() => loadDetail());
 </script>
 
 <style lang="scss" scoped>
@@ -112,5 +239,14 @@
   }
   .claim-btn[disabled] {
     opacity: 0.6;
+  }
+  .warning-card {
+    margin-bottom: 20rpx;
+    padding: 22rpx;
+    border-radius: 14rpx;
+    color: #856404;
+    background: #fff3cd;
+    font-size: 24rpx;
+    line-height: 36rpx;
   }
 </style>
