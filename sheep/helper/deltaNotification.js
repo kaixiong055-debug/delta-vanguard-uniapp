@@ -4,6 +4,8 @@ export const DeltaNotificationBizType = {
   SERVICE_ORDER: 'SERVICE_ORDER',
   SETTLEMENT: 'SETTLEMENT',
   ORDER_MARKET_LISTING: 'ORDER_MARKET_LISTING',
+  AFTER_SALE: 'AFTER_SALE',
+  REFUND: 'REFUND',
 };
 
 const notificationTypeMap = {
@@ -80,6 +82,28 @@ export function resolveDeltaNotificationTarget(notification = {}, currentMode = 
           '查看俱乐部订单',
         )
       : createTarget(DeltaRoute.CLUB_CLAIMED, {}, 'club', '查看已接挂牌');
+  }
+
+  if (bizType === DeltaNotificationBizType.AFTER_SALE) {
+    return hasBizId(bizId)
+      ? createTarget(
+          '/pages-delta/after-sale/detail',
+          { id: bizId },
+          'buyer',
+          '查看售后详情',
+        )
+      : createTarget(DeltaRoute.DELTA_AFTER_SALES, {}, 'buyer', '查看售后记录');
+  }
+
+  if (bizType === DeltaNotificationBizType.REFUND) {
+    return hasBizId(bizId)
+      ? createTarget(
+          '/pages-delta/refund/detail',
+          { id: bizId },
+          'buyer',
+          '查看退款详情',
+        )
+      : createTarget(DeltaRoute.DELTA_REFUNDS, {}, 'buyer', '查看退款记录');
   }
 
   if (bizType !== DeltaNotificationBizType.SERVICE_ORDER) return null;

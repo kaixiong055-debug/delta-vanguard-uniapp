@@ -56,7 +56,13 @@
             <view class="entry-icon">接</view><view class="entry-title">我的已接挂牌</view>
           </view>
           <view class="entry-card" @tap="goNotification">
-            <view class="entry-icon">信</view><view class="entry-title">消息通知</view>
+            <view class="entry-icon-wrap">
+              <view class="entry-icon">信</view>
+              <view v-if="notificationBadgeText" class="entry-badge">
+                {{ notificationBadgeText }}
+              </view>
+            </view>
+            <view class="entry-title">消息通知</view>
           </view>
           <view class="entry-card" @tap="exitToShop">
             <view class="entry-icon">商</view><view class="entry-title">返回商城模式</view>
@@ -72,6 +78,7 @@
   import { computed, ref } from 'vue';
   import { onPullDownRefresh, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
+  import NotificationApi from '@/sheep/api/delta/notification';
   import ClubTabbar from '../../components/club-tabbar.vue';
   import {
     DeltaRoute,
@@ -82,6 +89,7 @@
   const deltaStore = sheep.$store('delta');
   const ready = ref(false);
   const guardError = ref('');
+  const notificationUnreadCount = ref(0);
   const identity = computed(() => deltaStore.clubIdentity || {});
   const serviceScopes = computed(() =>
     Array.isArray(identity.value.serviceScopes) ? identity.value.serviceScopes : [],
@@ -92,9 +100,26 @@
   const businessStatusText = computed(() =>
     getClubBusinessStatusText(identity.value.businessStatus),
   );
+  const notificationBadgeText = computed(() => {
+    const count = Number(notificationUnreadCount.value || 0);
+    if (count <= 0) return '';
+    return count > 99 ? '99+' : String(count);
+  });
 
   function isScopeEnabled(scope) {
     return scope.enabled === true || Number(scope.enabled) === 1;
+  }
+
+  async function loadNotificationUnreadCount() {
+    try {
+      const res = await NotificationApi.getUnreadCount({
+        showError: false,
+        showLoading: false,
+      });
+      notificationUnreadCount.value = res?.code === 0 ? Number(res.data || 0) : 0;
+    } catch {
+      notificationUnreadCount.value = 0;
+    }
   }
 
   async function loadHome() {
@@ -107,6 +132,7 @@
       return;
     }
     ready.value = true;
+    await loadNotificationUnreadCount();
     uni.stopPullDownRefresh();
   }
 
@@ -227,6 +253,11 @@
   .entry-card {
     padding: 26rpx;
   }
+  .entry-icon-wrap {
+    position: relative;
+    width: 58rpx;
+    height: 58rpx;
+  }
   .entry-icon {
     width: 58rpx;
     height: 58rpx;
@@ -237,6 +268,22 @@
     line-height: 58rpx;
     text-align: center;
     font-weight: 800;
+  }
+  .entry-badge {
+    position: absolute;
+    top: -12rpx;
+    right: -20rpx;
+    min-width: 32rpx;
+    height: 32rpx;
+    padding: 0 7rpx;
+    border: 3rpx solid #ffffff;
+    border-radius: 999rpx;
+    color: #ffffff;
+    background: #e60012;
+    box-sizing: border-box;
+    font-size: 18rpx;
+    line-height: 26rpx;
+    text-align: center;
   }
   .entry-title {
     margin-top: 16rpx;

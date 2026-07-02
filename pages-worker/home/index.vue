@@ -113,7 +113,15 @@
 
         <view class="entry-grid">
           <view v-for="item in entries" :key="item.url" class="entry-card" @tap="go(item.url)">
-            <view class="entry-icon">{{ item.icon }}</view>
+            <view class="entry-icon-wrap">
+              <view class="entry-icon">{{ item.icon }}</view>
+              <view
+                v-if="item.url === DeltaRoute.DELTA_NOTIFICATIONS && notificationBadgeText"
+                class="entry-badge"
+              >
+                {{ notificationBadgeText }}
+              </view>
+            </view>
             <view class="entry-title">{{ item.title }}</view>
             <view class="entry-desc">{{ item.desc }}</view>
           </view>
@@ -132,6 +140,7 @@
   import { onPullDownRefresh, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import { showAuthModal } from '@/sheep/hooks/useModal';
+  import NotificationApi from '@/sheep/api/delta/notification';
   import WorkerOrderApi from '@/sheep/api/delta/workerOrder';
   import WorkerTabbar from '../components/worker-tabbar.vue';
   import {
@@ -148,6 +157,7 @@
   const deltaStore = sheep.$store('delta');
   const guardError = ref('');
   const priorityOrder = ref({});
+  const notificationUnreadCount = ref(0);
 
   const taskStats = reactive({
     pendingStart: 0,
@@ -188,6 +198,23 @@
     Number(profile.value.workStatus ?? identity.value.workStatus ?? DeltaWorkStatus.OFFLINE),
   );
   const isBusy = computed(() => currentWorkStatus.value === DeltaWorkStatus.BUSY);
+  const notificationBadgeText = computed(() => {
+    const count = Number(notificationUnreadCount.value || 0);
+    if (count <= 0) return '';
+    return count > 99 ? '99+' : String(count);
+  });
+
+  async function loadNotificationUnreadCount() {
+    try {
+      const res = await NotificationApi.getUnreadCount({
+        showError: false,
+        showLoading: false,
+      });
+      notificationUnreadCount.value = res?.code === 0 ? Number(res.data || 0) : 0;
+    } catch {
+      notificationUnreadCount.value = 0;
+    }
+  }
 
   async function loadTaskOverview() {
     if (taskStats.loading) return;
@@ -270,8 +297,11 @@
     }
 
     deltaStore.setAppMode(DeltaAppMode.WORKER);
-    await deltaStore.fetchWorkerProfile({ showError: false });
-    await loadTaskOverview();
+    await Promise.all([
+      deltaStore.fetchWorkerProfile({ showError: false }),
+      loadTaskOverview(),
+      loadNotificationUnreadCount(),
+    ]);
     uni.stopPullDownRefresh();
   }
 
@@ -538,9 +568,15 @@
     padding: 26rpx;
   }
 
-  .entry-icon {
+  .entry-icon-wrap {
+    position: relative;
     width: 58rpx;
     height: 58rpx;
+  }
+
+  .entry-icon {
+    width: 100%;
+    height: 100%;
     border-radius: 16rpx;
     color: #ffffff;
     background: #e60012;
@@ -548,6 +584,23 @@
     line-height: 58rpx;
     text-align: center;
     font-weight: 800;
+  }
+
+  .entry-badge {
+    position: absolute;
+    top: -12rpx;
+    right: -20rpx;
+    min-width: 32rpx;
+    height: 32rpx;
+    padding: 0 7rpx;
+    border: 3rpx solid #ffffff;
+    border-radius: 999rpx;
+    color: #ffffff;
+    background: #e60012;
+    box-sizing: border-box;
+    font-size: 18rpx;
+    line-height: 26rpx;
+    text-align: center;
   }
 
   .entry-title {
