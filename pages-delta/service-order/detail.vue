@@ -176,6 +176,14 @@
     return `${number}%`;
   }
 
+  function clearSectionData() {
+    timeline.value = [];
+    progressList.value = [];
+    evidenceList.value = [];
+    acceptances.value = [];
+    reworks.value = [];
+  }
+
   const canAccept = computed(() =>
     acceptableStatuses.includes(Number(detail.value.status)),
   );
@@ -311,46 +319,35 @@
 
       let warning = false;
 
-      if (detailRes?.code === 0) {
-        detail.value = detailRes.data || {};
+      const resolveList = (response) => {
+        if (response?.code === 0 && Array.isArray(response.data)) {
+          return response.data;
+        }
+
+        warning = true;
+        return [];
+      };
+
+      if (detailRes?.code === 0 && detailRes.data?.id) {
+        detail.value = detailRes.data;
       } else {
         detail.value = {};
+        clearSectionData();
         error.value = detailRes?.msg || '详情加载失败';
-        loading.value = false;
         return;
       }
 
-      timeline.value =
-        timelineRes?.code === 0 && Array.isArray(timelineRes.data)
-          ? timelineRes.data
-          : (warning = true) && [];
-      progressList.value =
-        progressRes?.code === 0 && Array.isArray(progressRes.data)
-          ? progressRes.data
-          : (warning = true) && [];
-      evidenceList.value =
-        evidenceRes?.code === 0 && Array.isArray(evidenceRes.data)
-          ? evidenceRes.data
-          : (warning = true) && [];
-      acceptances.value =
-        acceptanceRes?.code === 0 && Array.isArray(acceptanceRes.data)
-          ? acceptanceRes.data
-          : (warning = true) && [];
-      reworks.value =
-        reworkRes?.code === 0 && Array.isArray(reworkRes.data)
-          ? reworkRes.data
-          : (warning = true) && [];
+      timeline.value = resolveList(timelineRes);
+      progressList.value = resolveList(progressRes);
+      evidenceList.value = resolveList(evidenceRes);
+      acceptances.value = resolveList(acceptanceRes);
+      reworks.value = resolveList(reworkRes);
 
-      if (warning) {
-        sectionWarning.value = '部分履约记录加载失败';
-      }
+      sectionWarning.value = warning ? '部分履约记录加载失败' : '';
     } catch (err) {
       detail.value = {};
-      timeline.value = [];
-      progressList.value = [];
-      evidenceList.value = [];
-      acceptances.value = [];
-      reworks.value = [];
+      clearSectionData();
+      sectionWarning.value = '';
       error.value = err?.msg || err?.message || '详情加载失败';
     } finally {
       loading.value = false;

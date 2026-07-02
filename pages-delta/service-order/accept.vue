@@ -60,6 +60,8 @@
   }
 
   async function submit(serviceOrderId) {
+    if (submitting.value) return;
+
     submitting.value = true;
     try {
       const res = await ServiceOrderApi.accept({
@@ -70,7 +72,7 @@
         sheep.$helper.toast(res?.msg || '验收失败，请稍后重试');
         return;
       }
-      setTimeout(() => sheep.$router.back(), 300);
+      sheep.$router.back();
     } catch (error) {
       sheep.$helper.toast(error?.msg || error?.message || '验收失败，请稍后重试');
     } finally {
