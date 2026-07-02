@@ -56,8 +56,6 @@ export const DeltaRoute = {
   CLUB_MARKET: '/pages-delta/club/market/index',
   CLUB_MARKET_DETAIL: '/pages-delta/club/market/detail',
   CLUB_CLAIMED: '/pages-delta/club/claimed/index',
-  CLUB_ORDER_DETAIL: '/pages-delta/club/order/detail',
-  CLUB_ORDER_WORKER_SELECT: '/pages-delta/club/order/worker-select',
 };
 
 export const ServiceOrderStatus = {

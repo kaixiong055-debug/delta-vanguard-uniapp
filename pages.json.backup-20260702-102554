@@ -965,29 +965,6 @@
             "enablePullDownRefresh": true
           },
           "meta": { "auth": true, "title": "我的已接挂牌", "group": "Delta 俱乐部" }
-        },
-        {
-          "path": "club/order/detail",
-          "style": {
-            "navigationBarTitleText": "俱乐部订单详情"
-          },
-          "meta": {
-            "auth": true,
-            "title": "俱乐部订单详情",
-            "group": "Delta 俱乐部"
-          }
-        },
-        {
-          "path": "club/order/worker-select",
-          "style": {
-            "navigationBarTitleText": "分派打手",
-            "enablePullDownRefresh": true
-          },
-          "meta": {
-            "auth": true,
-            "title": "分派打手",
-            "group": "Delta 俱乐部"
-          }
         }
       ]
     }

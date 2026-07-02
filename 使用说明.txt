@@ -1,0 +1,29 @@
+﻿Delta UniApp 第三阶段第一批
+===========================
+
+核对基线：
+2f620b514ed5ac4e204dca8d696a5a8605aeed98
+
+本批功能：
+1. 新增 sheep/api/delta/clubOrder.js
+2. 将“我的已接挂牌”改为读取 /delta/club-order/page
+3. 新增俱乐部订单详情页
+4. 新增候选打手分页和选择页
+5. 接入 /delta/club-order/assign-worker
+6. 自动更新 pages.json 和 sheep/helper/delta.js
+
+使用方法：
+1. 将压缩包内全部文件复制到 delta-vanguard-uniapp 项目根目录，选择覆盖。
+2. 双击“应用UniApp第三阶段第一批.bat”。
+3. 执行：
+   git diff --check
+   git status --short
+4. 使用 HBuilderX 或项目原有命令运行微信小程序。
+5. 验证：
+   俱乐部中心 → 我的已接挂牌 → 订单详情 → 分派打手。
+
+本批不修改：
+- Java 后端
+- Vue3 管理后台
+- 商城登录、商品、SKU、购物车、支付、原订单
+- DIY JSON 和动态底部导航
