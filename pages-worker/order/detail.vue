@@ -9,12 +9,14 @@
         <view class="source-tag">俱乐部</view>
       </view>
 
-      <view v-if="detail.id" class="detail-card">
+      <view v-if="serviceOrderId" class="detail-card">
         <view class="title">{{ detail.productName || '服务任务' }}</view>
 
         <view class="row">
           <text class="label">状态</text>
-          <text class="value">{{ detail.statusName || getServiceOrderStatusText(detail.status) }}</text>
+          <text class="value">{{
+            detail.statusName || getServiceOrderStatusText(detail.status)
+          }}</text>
         </view>
         <view class="row">
           <text class="label">来源</text>
@@ -57,7 +59,7 @@
         {{ error }}
         <text @tap="refresh">重试</text>
       </view>
-      <s-empty v-if="!loading && !error && !detail.id" text="暂无任务详情" />
+      <s-empty v-if="!loading && !error && !serviceOrderId" text="暂无任务详情" />
 
       <view
         v-if="Number(detail.status) === ServiceOrderStatus.ACCEPTED_PENDING_START"
@@ -76,7 +78,11 @@
 
       <view v-if="progressList.length" class="section-card">
         <view class="section-title">进度记录</view>
-        <view v-for="item in progressList" :key="item.id" class="record">
+        <view
+          v-for="(item, index) in progressList"
+          :key="item.id || `progress-${index}`"
+          class="record"
+        >
           <view>{{ item.progressTypeName || progressTypeMap[item.progressType] }}</view>
           <text>{{ item.progressPercent ?? '-' }}% · {{ formatDeltaTime(item.createTime) }}</text>
           <view>{{ item.content }}</view>
@@ -85,15 +91,19 @@
 
       <view v-if="evidenceList.length" class="section-card">
         <view class="section-title">服务凭证</view>
-        <view v-for="item in evidenceList" :key="item.id" class="record">
+        <view
+          v-for="(item, index) in evidenceList"
+          :key="item.id || `evidence-${index}`"
+          class="record"
+        >
           <view>{{ item.evidenceTypeName || evidenceTypeMap[item.evidenceType] }}</view>
           <text>{{ formatDeltaTime(item.createTime) }}</text>
           <view>{{ item.description || item.content || item.fileUrl }}</view>
           <button
             v-if="Number(detail.status) === ServiceOrderStatus.IN_PROGRESS"
             class="ss-reset-button delete-btn"
-            :disabled="deletingId === item.id"
-            @tap="confirmDelete(item.id)"
+            :disabled="isDeletingEvidence(item)"
+            @tap="confirmDelete(item)"
           >
             删除
           </button>
@@ -105,7 +115,7 @@
 
 <script setup>
   import { computed, ref } from 'vue';
-  import { onLoad, onShow } from '@dcloudio/uni-app';
+  import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import WorkerOrderApi from '@/sheep/api/delta/workerOrder';
   import {
@@ -126,27 +136,71 @@
   const loading = ref(false);
   const error = ref('');
   const submitting = ref(false);
-  const deletingId = ref(null);
+  const deletingId = ref('');
   const progressList = ref([]);
   const evidenceList = ref([]);
   const deltaStore = sheep.$store('delta');
+
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  function normalizeRecord(item = {}) {
+    return {
+      ...item,
+      id: normalizeLongId(item.id),
+    };
+  }
+
+  function getEvidenceId(item = {}) {
+    return normalizeLongId(item.id);
+  }
+
+  function isDeletingEvidence(item = {}) {
+    const evidenceId = getEvidenceId(item);
+    return Boolean(evidenceId && deletingId.value === evidenceId);
+  }
+
+  const serviceOrderId = computed(() => normalizeLongId(detail.value.id));
+
+  function getCurrentServiceOrderId() {
+    return normalizeLongId(detail.value.id || id.value);
+  }
 
   const isClubAssigned = computed(
     () => Number(detail.value?.dispatchMode) === DeltaDispatchMode.CLUB_ASSIGN,
   );
 
   async function getDetail() {
+    if (loading.value) return;
+
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      detail.value = {};
+      error.value = '服务单 ID 不存在';
+      return;
+    }
+
     loading.value = true;
     error.value = '';
 
     try {
-      const res = await WorkerOrderApi.getDetail(id.value, { showError: false });
-      if (res?.code === 0) {
-        detail.value = res.data || {};
-      } else {
+      const res = await WorkerOrderApi.getDetail(normalizedId, { showError: false });
+
+      const responseId = normalizeLongId(res?.data?.id);
+
+      if (res?.code !== 0 || !responseId) {
         detail.value = {};
         error.value = res?.msg || '任务详情加载失败';
+        return;
       }
+
+      detail.value = {
+        ...res.data,
+        id: responseId,
+      };
     } catch (err) {
       detail.value = {};
       error.value = err?.msg || err?.message || '任务详情加载失败';
@@ -156,17 +210,28 @@
   }
 
   async function getRecords() {
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      progressList.value = [];
+      evidenceList.value = [];
+      return;
+    }
+
     try {
       const [progressRes, evidenceRes] = await Promise.all([
-        WorkerOrderApi.getProgressList(id.value, { showError: false }),
-        WorkerOrderApi.getEvidenceList(id.value, { showError: false }),
+        WorkerOrderApi.getProgressList(normalizedId, { showError: false }),
+        WorkerOrderApi.getEvidenceList(normalizedId, { showError: false }),
       ]);
-      progressList.value = progressRes?.code === 0 && Array.isArray(progressRes.data)
-        ? progressRes.data
-        : [];
-      evidenceList.value = evidenceRes?.code === 0 && Array.isArray(evidenceRes.data)
-        ? evidenceRes.data
-        : [];
+
+      progressList.value =
+        progressRes?.code === 0 && Array.isArray(progressRes.data)
+          ? progressRes.data.map(normalizeRecord)
+          : [];
+      evidenceList.value =
+        evidenceRes?.code === 0 && Array.isArray(evidenceRes.data)
+          ? evidenceRes.data.map(normalizeRecord)
+          : [];
     } catch (err) {
       progressList.value = [];
       evidenceList.value = [];
@@ -174,33 +239,92 @@
   }
 
   async function refresh() {
-    if (!id.value) return;
-    await Promise.all([getDetail(), getRecords()]);
+    const normalizedId = normalizeLongId(id.value);
+
+    if (!normalizedId) {
+      detail.value = {};
+      progressList.value = [];
+      evidenceList.value = [];
+      error.value = '服务单 ID 不存在';
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    try {
+      if (!(await deltaStore.guardWorkerPage())) {
+        uni.stopPullDownRefresh();
+        return;
+      }
+    } catch (guardError) {
+      error.value = guardError?.msg || guardError?.message || '打手身份校验失败';
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    try {
+      await Promise.all([getDetail(), getRecords()]);
+    } finally {
+      uni.stopPullDownRefresh();
+    }
   }
 
   function confirmStart() {
     if (submitting.value) return;
+
+    const currentId = getCurrentServiceOrderId();
+
+    if (!currentId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
     uni.showModal({
       title: '开始服务',
       content: '确认现在开始执行该服务？',
       success: ({ confirm }) => {
-        if (confirm) startOrder();
+        if (confirm) startOrder(currentId);
       },
     });
   }
 
-  async function startOrder() {
+  async function startOrder(serviceOrderId) {
+    const normalizedId = normalizeLongId(serviceOrderId);
+
+    if (!normalizedId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    if (submitting.value) return;
+
     submitting.value = true;
+
     try {
-      const res = await WorkerOrderApi.startOrder(id.value);
-      if (res?.code === 0) await refresh();
+      const res = await WorkerOrderApi.startOrder(normalizedId);
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '开始服务失败，请重试');
+        return;
+      }
+
+      await refresh();
+    } catch (err) {
+      sheep.$helper.toast(err?.msg || err?.message || '开始服务失败，请重试');
     } finally {
       submitting.value = false;
     }
   }
 
-  function confirmDelete(evidenceId) {
+  function confirmDelete(item = {}) {
     if (deletingId.value) return;
+
+    const evidenceId = getEvidenceId(item);
+
+    if (!evidenceId) {
+      sheep.$helper.toast('凭证 ID 不存在');
+      return;
+    }
+
     uni.showModal({
       title: '删除凭证',
       content: '确认删除这条凭证？',
@@ -211,38 +335,72 @@
   }
 
   async function deleteEvidence(evidenceId) {
-    deletingId.value = evidenceId;
+    const normalizedId = normalizeLongId(evidenceId);
+
+    if (!normalizedId) {
+      sheep.$helper.toast('凭证 ID 不存在');
+      return;
+    }
+
+    if (deletingId.value) return;
+
+    deletingId.value = normalizedId;
+
     try {
-      const res = await WorkerOrderApi.deleteEvidence(evidenceId);
-      if (res?.code === 0) await getRecords();
+      const res = await WorkerOrderApi.deleteEvidence(normalizedId);
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '删除凭证失败，请重试');
+        return;
+      }
+
+      await getRecords();
+    } catch (err) {
+      sheep.$helper.toast(err?.msg || err?.message || '删除凭证失败，请重试');
     } finally {
-      deletingId.value = null;
+      deletingId.value = '';
     }
   }
 
   function goProgress() {
-    sheep.$router.go('/pages-worker/progress/submit', { id: id.value });
+    const currentId = getCurrentServiceOrderId();
+
+    if (!currentId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go('/pages-worker/progress/submit', { id: currentId });
   }
 
   function goEvidence() {
-    sheep.$router.go('/pages-worker/evidence/submit', { id: id.value });
+    const currentId = getCurrentServiceOrderId();
+
+    if (!currentId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go('/pages-worker/evidence/submit', { id: currentId });
   }
 
   function goCompletion() {
-    sheep.$router.go('/pages-worker/completion/submit', { id: id.value });
+    const currentId = getCurrentServiceOrderId();
+
+    if (!currentId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go('/pages-worker/completion/submit', { id: currentId });
   }
 
   onLoad((options = {}) => {
-    id.value = options.id || '';
+    id.value = normalizeLongId(options.id);
   });
 
-  onShow(async () => {
-    if (!id.value) {
-      error.value = '服务单 ID 不存在';
-      return;
-    }
-    if (await deltaStore.guardWorkerPage()) await refresh();
-  });
+  onShow(refresh);
+  onPullDownRefresh(refresh);
 </script>
 
 <style lang="scss" scoped>

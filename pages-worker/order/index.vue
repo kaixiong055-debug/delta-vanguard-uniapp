@@ -19,16 +19,13 @@
       </view>
 
       <worker-order-card
-        v-for="item in state.list"
-        :key="item.id"
+        v-for="(item, index) in state.list"
+        :key="item.id || `${item.serviceOrderNo || 'invalid-order'}-${index}`"
         :order="item"
         @tap="goDetail"
       />
 
-      <s-empty
-        v-if="!state.loading && !state.error && state.list.length === 0"
-        text="暂无任务"
-      />
+      <s-empty v-if="!state.loading && !state.error && state.list.length === 0" text="暂无任务" />
       <uni-load-more v-if="state.list.length > 0" :status="state.loadStatus" @tap="loadMore" />
     </view>
 
@@ -47,6 +44,33 @@
 
   const deltaStore = sheep.$store('delta');
 
+  function normalizeLongId(value) {
+    const text = String(value ?? '').trim();
+    return /^[1-9]\d*$/.test(text) ? text : '';
+  }
+
+  function normalizeCount(value) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+      return 0;
+    }
+    return number;
+  }
+
+  function restoreAfterLoadFailure(reset, requestedPage) {
+    if (!reset && requestedPage > 1) {
+      state.pageNo = requestedPage - 1;
+    }
+    state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+  }
+
+  function normalizeOrder(item = {}) {
+    return {
+      ...item,
+      id: normalizeLongId(item.id),
+    };
+  }
+
   const tabs = [
     { label: '全部', value: undefined },
     { label: '待开始', value: ServiceOrderStatus.ACCEPTED_PENDING_START },
@@ -55,9 +79,7 @@
     { label: '已完成', value: ServiceOrderStatus.COMPLETED },
   ];
 
-  const allowedStatuses = tabs
-    .map((item) => item.value)
-    .filter((value) => value !== undefined);
+  const allowedStatuses = tabs.map((item) => item.value).filter((value) => value !== undefined);
 
   const state = reactive({
     status: undefined,
@@ -77,13 +99,22 @@
   }
 
   async function getList(reset = false) {
-    if (state.loading) return;
+    if (state.loading) {
+      uni.stopPullDownRefresh();
+      return;
+    }
+
+    if (!reset && state.loadStatus === 'noMore') {
+      uni.stopPullDownRefresh();
+      return;
+    }
 
     if (reset) {
       state.pageNo = 1;
       state.list = [];
       state.total = 0;
       state.loadStatus = 'more';
+      state.error = '';
     }
 
     const requestedPage = state.pageNo;
@@ -100,20 +131,21 @@
 
       const res = await WorkerOrderApi.getPage(params, { showError: false });
 
-      if (res?.code === 0) {
-        const list = Array.isArray(res.data?.list) ? res.data.list : [];
-        state.total = Number(res.data?.total || 0);
-        state.list = reset ? list : state.list.concat(list);
-        state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
-      } else {
+      if (res?.code !== 0) {
         state.error = res?.msg || '任务加载失败';
-        if (!reset && requestedPage > 1) state.pageNo = requestedPage - 1;
-        state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+        restoreAfterLoadFailure(reset, requestedPage);
+        return;
       }
+
+      const rows = Array.isArray(res.data?.list) ? res.data.list.map(normalizeOrder) : [];
+      const total = normalizeCount(res.data?.total);
+
+      state.total = total;
+      state.list = reset ? rows : state.list.concat(rows);
+      state.loadStatus = state.list.length < state.total ? 'more' : 'noMore';
     } catch (error) {
       state.error = error?.msg || error?.message || '任务加载失败';
-      if (!reset && requestedPage > 1) state.pageNo = requestedPage - 1;
-      state.loadStatus = state.list.length > 0 ? 'more' : 'noMore';
+      restoreAfterLoadFailure(reset, requestedPage);
     } finally {
       state.loading = false;
       uni.stopPullDownRefresh();
@@ -121,8 +153,13 @@
   }
 
   function changeStatus(status) {
-    if (state.status === status) return;
-    state.status = status;
+    if (state.loading) return;
+
+    const normalized = normalizeStatus(status);
+
+    if (normalized === state.status) return;
+
+    state.status = normalized;
     getList(true);
   }
 
@@ -132,20 +169,37 @@
     getList();
   }
 
-  function goDetail(order) {
-    sheep.$router.go('/pages-worker/order/detail', { id: order.id });
+  function goDetail(order = {}) {
+    const serviceOrderId = normalizeLongId(order.id);
+
+    if (!serviceOrderId) {
+      sheep.$helper.toast('服务单 ID 不存在');
+      return;
+    }
+
+    sheep.$router.go('/pages-worker/order/detail', {
+      id: serviceOrderId,
+    });
+  }
+
+  async function loadWithWorkerGuard() {
+    try {
+      if (await deltaStore.guardWorkerPage()) {
+        await getList(true);
+      }
+    } catch (error) {
+      state.error = error?.msg || error?.message || '打手身份校验失败';
+    } finally {
+      uni.stopPullDownRefresh();
+    }
   }
 
   onLoad((options = {}) => {
     state.status = normalizeStatus(options.status);
   });
 
-  onShow(async () => {
-    if (await deltaStore.guardWorkerPage()) await getList(true);
-    else uni.stopPullDownRefresh();
-  });
-
-  onPullDownRefresh(() => getList(true));
+  onShow(loadWithWorkerGuard);
+  onPullDownRefresh(loadWithWorkerGuard);
   onReachBottom(loadMore);
 </script>
 
