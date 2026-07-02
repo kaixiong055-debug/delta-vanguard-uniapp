@@ -159,8 +159,18 @@
 
   const entries = [
     { title: '接单大厅', desc: '查看并领取匹配服务单', icon: '抢', url: DeltaRoute.WORKER_POOL },
-    { title: '我的任务', desc: '执行平台与俱乐部分派任务', icon: '单', url: DeltaRoute.WORKER_ORDERS },
-    { title: '收入结算', desc: '查看结算状态和收入', icon: '收', url: DeltaRoute.WORKER_INCOME },
+    {
+      title: '我的任务',
+      desc: '执行平台与俱乐部分派任务',
+      icon: '单',
+      url: DeltaRoute.WORKER_ORDERS,
+    },
+    {
+      title: '收入结算',
+      desc: '查看审核、待打款和已打款记录',
+      icon: '收',
+      url: DeltaRoute.WORKER_INCOME,
+    },
     {
       title: '消息通知',
       desc: '查看 Delta 站内消息',
@@ -213,11 +223,7 @@
       taskStats.waitingAccept = Number(submittedRes.data?.total || 0);
 
       const first = (res) => (Array.isArray(res.data?.list) ? res.data.list[0] : null);
-      priorityOrder.value =
-        first(progressRes) ||
-        first(pendingRes) ||
-        first(submittedRes) ||
-        {};
+      priorityOrder.value = first(progressRes) || first(pendingRes) || first(submittedRes) || {};
     } catch (error) {
       taskStats.error = error?.msg || error?.message || '任务概览加载失败';
       priorityOrder.value = {};

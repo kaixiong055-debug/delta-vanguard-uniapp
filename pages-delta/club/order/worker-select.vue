@@ -21,11 +21,8 @@
         :class="{ selected: Number(selectedWorkerId) === Number(item.id) }"
         @tap="selectWorker(item)"
       >
-        <image
-          class="avatar"
-          :src="item.avatar || '/static/images/user/avatar-default.png'"
-          mode="aspectFill"
-        />
+        <image v-if="item.avatar" class="avatar" :src="item.avatar" mode="aspectFill" />
+        <view v-else class="avatar avatar-fallback">{{ getAvatarText(item.displayName) }}</view>
         <view class="worker-main">
           <view class="worker-head">
             <view class="worker-name">{{ item.displayName || '未命名打手' }}</view>
@@ -73,7 +70,7 @@
 
 <script setup>
   import { reactive, ref } from 'vue';
-  import { onLoad, onReachBottom, onShow } from '@dcloudio/uni-app';
+  import { onLoad, onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import ClubOrderApi from '@/sheep/api/delta/clubOrder';
 
@@ -146,7 +143,12 @@
   }
 
   function selectWorker(item) {
+    if (submitting.value) return;
     selectedWorkerId.value = item?.id || '';
+  }
+
+  function getAvatarText(displayName) {
+    return String(displayName || '打').slice(0, 1);
   }
 
   function confirmAssign() {
@@ -194,6 +196,22 @@
     }
     if (await deltaStore.guardClubMarketPage({ requireServiceScope: false })) {
       await loadPage(true);
+    }
+  });
+
+  onPullDownRefresh(async () => {
+    try {
+      if (!listingId.value) {
+        state.error = '挂牌 ID 不存在';
+        return;
+      }
+      if (await deltaStore.guardClubMarketPage({ requireServiceScope: false })) {
+        await loadPage(true);
+      }
+    } catch (error) {
+      state.error = error?.msg || error?.message || '候选打手加载失败';
+    } finally {
+      uni.stopPullDownRefresh();
     }
   });
 
@@ -250,11 +268,22 @@
   }
 
   .avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     width: 96rpx;
     height: 96rpx;
     margin-right: 18rpx;
     border-radius: 50%;
     background: #f0f1f3;
+  }
+
+  .avatar-fallback {
+    color: #ffffff;
+    background: #e60012;
+    font-size: 34rpx;
+    font-weight: 800;
   }
 
   .worker-main {

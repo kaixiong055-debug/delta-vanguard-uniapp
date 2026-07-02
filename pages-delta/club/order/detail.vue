@@ -23,14 +23,20 @@
           </view>
           <view class="status-line">
             <text>当前状态</text>
-            <text class="status">{{ detail.orderStatusName || getServiceOrderStatusText(detail.orderStatus) }}</text>
+            <text class="status">{{
+              detail.orderStatusName || getServiceOrderStatusText(detail.orderStatus)
+            }}</text>
           </view>
         </view>
 
         <view class="section-card">
           <view class="section-title">订单信息</view>
-          <view class="row"><text>服务单号</text><text>{{ detail.serviceOrderNo || '-' }}</text></view>
-          <view class="row"><text>挂牌编号</text><text>{{ detail.listingNo || '-' }}</text></view>
+          <view class="row"
+            ><text>服务单号</text><text>{{ detail.serviceOrderNo || '-' }}</text></view
+          >
+          <view class="row"
+            ><text>挂牌编号</text><text>{{ detail.listingNo || '-' }}</text></view
+          >
           <view class="row">
             <text>服务类型</text>
             <text>{{ detail.serviceTypeName || getServiceTypeText(detail.serviceType) }}</text>
@@ -39,9 +45,15 @@
             <text>设备类型</text>
             <text>{{ detail.deviceTypeName || getDeviceTypeText(detail.deviceType) }}</text>
           </view>
-          <view class="row"><text>数量</text><text>{{ detail.count || 1 }}</text></view>
-          <view class="row"><text>接单时间</text><text>{{ formatDeltaTime(detail.claimTime) }}</text></view>
-          <view class="row"><text>创建时间</text><text>{{ formatDeltaTime(detail.createTime) }}</text></view>
+          <view class="row"
+            ><text>数量</text><text>{{ detail.count || 1 }}</text></view
+          >
+          <view class="row"
+            ><text>接单时间</text><text>{{ formatDeltaTime(detail.claimTime) }}</text></view
+          >
+          <view class="row"
+            ><text>创建时间</text><text>{{ formatDeltaTime(detail.createTime) }}</text></view
+          >
           <view v-if="detail.customerRemark" class="remark">
             <view class="remark-title">客户备注</view>
             <view>{{ detail.customerRemark }}</view>
@@ -52,12 +64,16 @@
           <view class="section-title">履约打手</view>
           <view v-if="detail.assignedWorkerId" class="worker-box">
             <image
+              v-if="detail.assignedWorkerAvatar"
               class="avatar"
-              :src="detail.assignedWorkerAvatar || '/static/images/user/avatar-default.png'"
+              :src="detail.assignedWorkerAvatar"
               mode="aspectFill"
             />
+            <view v-else class="avatar avatar-fallback">{{ workerAvatarText }}</view>
             <view class="worker-main">
-              <view class="worker-name">{{ detail.assignedWorkerDisplayName || '未命名打手' }}</view>
+              <view class="worker-name">{{
+                detail.assignedWorkerDisplayName || '未命名打手'
+              }}</view>
               <view class="worker-no">{{ detail.assignedWorkerNo || '-' }}</view>
             </view>
             <view class="assigned-tag">已分派</view>
@@ -70,17 +86,21 @@
 
         <view class="section-card">
           <view class="section-title">履约时间</view>
-          <view class="row"><text>接受时间</text><text>{{ formatDeltaTime(detail.acceptedAt) }}</text></view>
-          <view class="row"><text>开始时间</text><text>{{ formatDeltaTime(detail.startedAt) }}</text></view>
-          <view class="row"><text>提交时间</text><text>{{ formatDeltaTime(detail.submittedAt) }}</text></view>
-          <view class="row"><text>完成时间</text><text>{{ formatDeltaTime(detail.completedAt) }}</text></view>
+          <view class="row"
+            ><text>接受时间</text><text>{{ formatDeltaTime(detail.acceptedAt) }}</text></view
+          >
+          <view class="row"
+            ><text>开始时间</text><text>{{ formatDeltaTime(detail.startedAt) }}</text></view
+          >
+          <view class="row"
+            ><text>提交时间</text><text>{{ formatDeltaTime(detail.submittedAt) }}</text></view
+          >
+          <view class="row"
+            ><text>完成时间</text><text>{{ formatDeltaTime(detail.completedAt) }}</text></view
+          >
         </view>
 
-        <button
-          v-if="canAssign"
-          class="ss-reset-button primary-btn"
-          @tap="goWorkerSelect"
-        >
+        <button v-if="canAssign" class="ss-reset-button primary-btn" @tap="goWorkerSelect">
           分派打手
         </button>
       </block>
@@ -116,6 +136,10 @@
       Boolean(detail.value?.listingId) &&
       !detail.value?.assignedWorkerId &&
       Number(detail.value?.orderStatus) === ServiceOrderStatus.PENDING_DISPATCH,
+  );
+
+  const workerAvatarText = computed(() =>
+    String(detail.value?.assignedWorkerDisplayName || '打').slice(0, 1),
   );
 
   async function loadDetail() {
@@ -290,11 +314,22 @@
   }
 
   .avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     width: 88rpx;
     height: 88rpx;
     margin-right: 18rpx;
     border-radius: 50%;
     background: #f0f1f3;
+  }
+
+  .avatar-fallback {
+    color: #ffffff;
+    background: #e60012;
+    font-size: 32rpx;
+    font-weight: 800;
   }
 
   .worker-name {

@@ -42,6 +42,24 @@ export const DeltaDispatchMode = {
   CLUB_ASSIGN: 4,
 };
 
+export const SettlementStatus = {
+  PENDING_REVIEW: 0,
+  APPROVED: 1,
+  PAID: 2,
+  REJECTED: 3,
+};
+
+export const settlementStatusMap = {
+  [SettlementStatus.PENDING_REVIEW]: '待审核',
+  [SettlementStatus.APPROVED]: '已通过 / 待打款',
+  [SettlementStatus.PAID]: '已打款',
+  [SettlementStatus.REJECTED]: '已驳回',
+};
+
+export function getSettlementStatusText(status) {
+  return settlementStatusMap[Number(status)] || '-';
+}
+
 export const dispatchModeMap = {
   [DeltaDispatchMode.DESIGNATED]: '客户指定',
   [DeltaDispatchMode.ADMIN_ASSIGN]: '客服派单',
