@@ -1,74 +1,127 @@
 <template>
   <s-layout title="打手中心" :bgStyle="{ color: '#f4f6f8' }">
     <view class="worker-page">
-      <view class="profile-card">
-        <view class="avatar">
-          <image v-if="profile.avatar" class="avatar-img" :src="profile.avatar" mode="aspectFill" />
-          <text v-else>{{ avatarText }}</text>
-        </view>
-        <view class="profile-info">
-          <view class="name">{{ profile.displayName || identity.displayName || '打手中心' }}</view>
-          <view class="meta">{{ deltaStore.statusInfo.title }}</view>
-        </view>
+      <view v-if="error" class="error-card">
+        <text>{{ error }}</text>
+        <text class="retry" @tap="loadProfilePage">重试</text>
       </view>
 
-      <view class="menu-list">
-        <view class="menu-item" @tap="sheep.$router.go(DeltaRoute.WORKER_PROFILE_EDIT)">
-          <text>编辑资料</text>
-          <text class="arrow">></text>
+      <block v-if="pageReady">
+        <view class="profile-card">
+          <view class="avatar">
+            <image v-if="avatarUrl" class="avatar-img" :src="avatarUrl" mode="aspectFill" />
+            <text v-else>{{ avatarText }}</text>
+          </view>
+          <view class="profile-info">
+            <view class="name">{{ displayName }}</view>
+            <view class="meta">{{ deltaStore.statusInfo.title }}</view>
+          </view>
         </view>
-        <view class="menu-item" @tap="sheep.$router.go(DeltaRoute.WORKER_APPLY_STATUS)">
-          <text>认证状态</text>
-          <text class="arrow">></text>
+
+        <view class="menu-list">
+          <view
+            class="menu-item"
+            @tap="loading ? undefined : sheep.$router.go(DeltaRoute.WORKER_PROFILE_EDIT)"
+          >
+            <text>编辑资料</text>
+            <text class="arrow">></text>
+          </view>
+          <view
+            class="menu-item"
+            @tap="loading ? undefined : sheep.$router.go(DeltaRoute.WORKER_APPLY_STATUS)"
+          >
+            <text>认证状态</text>
+            <text class="arrow">></text>
+          </view>
+          <view class="menu-item" @tap="exitToShop">
+            <text>返回商城模式</text>
+            <text class="arrow">></text>
+          </view>
         </view>
-        <view class="menu-item" @tap="exitToShop">
-          <text>返回商城模式</text>
-          <text class="arrow">></text>
-        </view>
-      </view>
+      </block>
     </view>
     <worker-tabbar :active="DeltaRoute.WORKER_PROFILE" />
   </s-layout>
 </template>
 
 <script setup>
-  import { computed } from 'vue';
+  import { computed, ref } from 'vue';
   import { onShow } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import WorkerTabbar from '../components/worker-tabbar.vue';
-  import { DeltaAuditStatus, DeltaRoute } from '@/sheep/helper/delta';
+  import { DeltaRoute } from '@/sheep/helper/delta';
 
   const deltaStore = sheep.$store('delta');
+
+  const loading = ref(false);
+  const error = ref('');
+  const pageReady = ref(false);
+  const exiting = ref(false);
+
   const identity = computed(() => deltaStore.identity || {});
   const profile = computed(() => deltaStore.profile || {});
-  const avatarText = computed(() =>
-    (profile.value.displayName || identity.value.displayName || '打').slice(0, 1),
-  );
+
+  function normalizeImageUrl(value) {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+
+    if (Array.isArray(value)) {
+      return normalizeImageUrl(value[0]);
+    }
+
+    if (value && typeof value === 'object') {
+      return String(value.url ?? '').trim();
+    }
+
+    return '';
+  }
+
+  const avatarUrl = computed(() => normalizeImageUrl(profile.value.avatar));
+
+  const displayName = computed(() => {
+    const value = profile.value.displayName || identity.value.displayName || '';
+
+    return String(value).trim() || '打手中心';
+  });
+
+  const avatarText = computed(() => displayName.value.slice(0, 1) || '打');
 
   function exitToShop() {
+    if (exiting.value) return;
+    exiting.value = true;
     deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
   }
 
-  async function guardProfilePage() {
-    const res = await deltaStore.fetchWorkerIdentity({ force: true, showError: false });
-    if (res?.code !== 0) {
-      return;
+  async function loadProfilePage() {
+    if (loading.value) return;
+
+    loading.value = true;
+    error.value = '';
+    pageReady.value = false;
+    exiting.value = false;
+
+    try {
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) {
+        return;
+      }
+
+      if (!deltaStore.profile || typeof deltaStore.profile !== 'object') {
+        error.value = '打手资料加载失败';
+        return;
+      }
+
+      pageReady.value = true;
+    } catch (loadError) {
+      error.value = loadError?.msg || loadError?.message || '打手资料加载失败';
+    } finally {
+      loading.value = false;
     }
-    const status = Number(
-      deltaStore.identity?.auditStatus ?? deltaStore.identity?.applicationStatus,
-    );
-    if (status === DeltaAuditStatus.DISABLED || status === DeltaAuditStatus.BLACKLISTED) {
-      deltaStore.exitWorkerMode(DeltaRoute.SHOP_USER);
-      return;
-    }
-    if (!deltaStore.canEnterWorker) {
-      sheep.$router.redirect(deltaStore.resolveWorkerRoute());
-      return;
-    }
-    await deltaStore.fetchWorkerProfile({ showError: false });
   }
 
-  onShow(guardProfilePage);
+  onShow(loadProfilePage);
 </script>
 
 <style lang="scss" scoped>
@@ -150,5 +203,22 @@
 
   .arrow {
     color: #a5abb5;
+  }
+
+  .error-card {
+    padding: 44rpx 30rpx;
+    border-radius: 18rpx;
+    background: #ffffff;
+    text-align: center;
+    color: #8c929d;
+    font-size: 26rpx;
+    line-height: 40rpx;
+  }
+
+  .retry {
+    display: inline-block;
+    margin-top: 18rpx;
+    color: #e60012;
+    font-weight: 800;
   }
 </style>

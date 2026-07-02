@@ -1,40 +1,51 @@
 <template>
   <s-layout title="编辑资料" :bgStyle="{ color: '#f4f6f8' }">
     <view class="form-page">
-      <view class="form-card">
-        <view class="field">
-          <view class="label">头像</view>
-          <s-uploader
-            v-model:url="form.avatar"
-            fileMediatype="image"
-            limit="1"
-            mode="grid"
-            :imageStyles="{ width: '150rpx', height: '150rpx' }"
-          />
-        </view>
-        <view class="field">
-          <view class="label">展示名称</view>
-          <input
-            v-model="form.displayName"
-            class="input"
-            maxlength="50"
-            placeholder="请输入展示名称"
-          />
-        </view>
-        <view class="field">
-          <view class="label">手机号</view>
-          <input
-            v-model="form.phone"
-            class="input"
-            maxlength="11"
-            type="number"
-            placeholder="请输入 11 位手机号"
-          />
-        </view>
+      <view v-if="error" class="error-card">
+        <text>{{ error }}</text>
+        <text class="retry" @tap="loadProfilePage">重试</text>
       </view>
-      <button class="ss-reset-button submit-btn" :disabled="submitting" @tap="submit">
-        {{ submitting ? '保存中' : '保存' }}
-      </button>
+
+      <template v-if="initialized">
+        <view class="form-card">
+          <view class="field">
+            <view class="label">头像</view>
+            <s-uploader
+              v-model:url="form.avatar"
+              fileMediatype="image"
+              limit="1"
+              mode="grid"
+              :imageStyles="{ width: '150rpx', height: '150rpx' }"
+            />
+          </view>
+          <view class="field">
+            <view class="label">展示名称</view>
+            <input
+              v-model="form.displayName"
+              class="input"
+              maxlength="50"
+              placeholder="请输入展示名称"
+            />
+          </view>
+          <view class="field">
+            <view class="label">手机号</view>
+            <input
+              v-model="form.phone"
+              class="input"
+              maxlength="11"
+              type="number"
+              placeholder="请输入 11 位手机号"
+            />
+          </view>
+        </view>
+        <button
+          class="ss-reset-button submit-btn"
+          :disabled="loading || checking || submitting"
+          @tap="submit"
+        >
+          {{ submitting ? '保存中' : '保存' }}
+        </button>
+      </template>
     </view>
   </s-layout>
 </template>
@@ -47,60 +58,133 @@
   import { DeltaRoute } from '@/sheep/helper/delta';
 
   const deltaStore = sheep.$store('delta');
+
+  const loading = ref(false);
+  const error = ref('');
+  const initialized = ref(false);
+  const checking = ref(false);
   const submitting = ref(false);
+
   const form = reactive({
     displayName: '',
     avatar: '',
     phone: '',
   });
 
+  function normalizeText(value) {
+    return String(value ?? '').trim();
+  }
+
+  function normalizeImageUrl(value) {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+
+    if (Array.isArray(value)) {
+      return normalizeImageUrl(value[0]);
+    }
+
+    if (value && typeof value === 'object') {
+      return String(value.url ?? '').trim();
+    }
+
+    return '';
+  }
+
   function fillProfile(data = {}) {
-    form.displayName = data.displayName || '';
-    form.avatar = data.avatar || '';
-    form.phone = data.phone || '';
+    form.displayName = normalizeText(data.displayName);
+    form.avatar = normalizeImageUrl(data.avatar);
+    form.phone = normalizeText(data.phone);
   }
 
-  async function loadProfile() {
-    const identityRes = await deltaStore.fetchWorkerIdentity({ force: true, showError: false });
-    if (identityRes?.code !== 0) {
-      sheep.$helper.toast(deltaStore.identityError || '身份查询失败，请稍后重试');
-      return;
-    }
-    if (!deltaStore.canEnterWorker) {
-      sheep.$router.redirect(deltaStore.resolveWorkerRoute() || DeltaRoute.WORKER_APPLY_STATUS);
-      return;
-    }
-    const res = await deltaStore.fetchWorkerProfile({ showError: false });
-    if (res?.code === 0) {
-      fillProfile(res.data);
+  async function loadProfilePage() {
+    if (loading.value) return;
+    if (checking.value || submitting.value) return;
+
+    loading.value = true;
+    error.value = '';
+
+    try {
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) {
+        return;
+      }
+
+      if (!initialized.value) {
+        const data = deltaStore.profile;
+
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          error.value = '打手资料加载失败';
+          return;
+        }
+
+        fillProfile(data);
+        initialized.value = true;
+      }
+    } catch (loadError) {
+      error.value = loadError?.msg || loadError?.message || '打手资料加载失败';
+    } finally {
+      loading.value = false;
     }
   }
 
-  function validateForm() {
-    if (form.phone && !test.mobile(form.phone)) {
+  function buildSubmitData() {
+    const displayName = normalizeText(form.displayName);
+    const avatar = normalizeImageUrl(form.avatar);
+    const phone = normalizeText(form.phone);
+
+    if (displayName.length > 50) {
+      sheep.$helper.toast('展示名称不能超过 50 个字符');
+      return null;
+    }
+
+    if (phone && !test.mobile(phone)) {
       sheep.$helper.toast('请输入正确的手机号');
-      return false;
+      return null;
     }
-    return true;
+
+    return {
+      displayName,
+      avatar,
+      phone,
+    };
   }
 
   async function submit() {
-    if (submitting.value || !validateForm()) {
+    if (loading.value || checking.value || submitting.value) {
       return;
     }
-    submitting.value = true;
-    const res = await deltaStore.updateWorkerProfile({
-      displayName: form.displayName,
-      avatar: form.avatar,
-      phone: form.phone,
-    });
-    submitting.value = false;
-    if (res?.code === 0) {
+
+    const data = buildSubmitData();
+    if (!data) return;
+
+    checking.value = true;
+
+    try {
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) return;
+
+      submitting.value = true;
+
+      const res = await deltaStore.updateWorkerProfile(data);
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '资料保存失败，请重试');
+        return;
+      }
+
       sheep.$router.back();
+    } catch (submitError) {
+      sheep.$helper.toast(submitError?.msg || submitError?.message || '资料保存失败，请重试');
+    } finally {
+      checking.value = false;
+      submitting.value = false;
     }
   }
 
-  onShow(loadProfile);
+  onShow(loadProfilePage);
 </script>
 
 <style lang="scss" scoped>
@@ -158,5 +242,22 @@
 
   .submit-btn[disabled] {
     opacity: 0.6;
+  }
+
+  .error-card {
+    padding: 44rpx 30rpx;
+    border-radius: 18rpx;
+    background: #ffffff;
+    text-align: center;
+    color: #8c929d;
+    font-size: 26rpx;
+    line-height: 40rpx;
+  }
+
+  .retry {
+    display: inline-block;
+    margin-top: 18rpx;
+    color: #e60012;
+    font-weight: 800;
   }
 </style>

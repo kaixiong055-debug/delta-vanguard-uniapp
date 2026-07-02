@@ -45,21 +45,30 @@
           <view class="status-actions">
             <button
               class="ss-reset-button ghost-btn"
-              :disabled="isBusy"
+              :class="{
+                active: currentWorkStatus === DeltaWorkStatus.ONLINE,
+              }"
+              :disabled="isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.ONLINE)"
             >
               设为在线
             </button>
             <button
               class="ss-reset-button ghost-btn"
-              :disabled="isBusy"
+              :class="{
+                active: currentWorkStatus === DeltaWorkStatus.OFFLINE,
+              }"
+              :disabled="isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.OFFLINE)"
             >
               设为离线
             </button>
             <button
               class="ss-reset-button ghost-btn"
-              :disabled="isBusy"
+              :class="{
+                active: currentWorkStatus === DeltaWorkStatus.PAUSED,
+              }"
+              :disabled="isBusy || workStatusUpdating"
               @tap="setWorkStatus(DeltaWorkStatus.PAUSED)"
             >
               暂停接单
@@ -194,9 +203,21 @@
   const avatarText = computed(() =>
     (profile.value.displayName || identity.value.displayName || '打').slice(0, 1),
   );
-  const currentWorkStatus = computed(() =>
-    Number(profile.value.workStatus ?? identity.value.workStatus ?? DeltaWorkStatus.OFFLINE),
-  );
+  const allWorkStatuses = Object.values(DeltaWorkStatus);
+  const manualWorkStatuses = [
+    DeltaWorkStatus.OFFLINE,
+    DeltaWorkStatus.ONLINE,
+    DeltaWorkStatus.PAUSED,
+  ];
+
+  const currentWorkStatus = computed(() => {
+    const status = Number(
+      profile.value.workStatus ?? identity.value.workStatus ?? DeltaWorkStatus.OFFLINE,
+    );
+
+    return allWorkStatuses.includes(status) ? status : DeltaWorkStatus.OFFLINE;
+  });
+  const workStatusUpdating = ref(false);
   const isBusy = computed(() => currentWorkStatus.value === DeltaWorkStatus.BUSY);
   const notificationBadgeText = computed(() => {
     const count = Number(notificationUnreadCount.value || 0);
@@ -305,12 +326,57 @@
     uni.stopPullDownRefresh();
   }
 
+  function normalizeManualWorkStatus(value) {
+    const status = Number(value);
+
+    return manualWorkStatuses.includes(status) ? status : null;
+  }
+
   async function setWorkStatus(workStatus) {
-    if (isBusy.value) {
-      sheep.$helper.toast('履约中的打手不能手动切换工作状态');
+    if (workStatusUpdating.value) return;
+
+    const normalizedStatus = normalizeManualWorkStatus(workStatus);
+
+    if (normalizedStatus === null) {
+      sheep.$helper.toast('无效的工作状态');
       return;
     }
-    await deltaStore.updateWorkerWorkStatus(workStatus);
+
+    workStatusUpdating.value = true;
+
+    try {
+      const allowed = await deltaStore.guardWorkerPage();
+
+      if (!allowed) return;
+
+      const latestStatus = Number(
+        deltaStore.profile?.workStatus ??
+          deltaStore.identity?.workStatus ??
+          DeltaWorkStatus.OFFLINE,
+      );
+
+      if (latestStatus === DeltaWorkStatus.BUSY) {
+        sheep.$helper.toast('履约中的打手不能手动切换工作状态');
+        return;
+      }
+
+      if (latestStatus === normalizedStatus) {
+        return;
+      }
+
+      const res = await deltaStore.updateWorkerWorkStatus(normalizedStatus);
+
+      if (res?.code !== 0) {
+        sheep.$helper.toast(res?.msg || '工作状态更新失败，请重试');
+        return;
+      }
+
+      sheep.$helper.toast('工作状态已更新');
+    } catch (updateError) {
+      sheep.$helper.toast(updateError?.msg || updateError?.message || '工作状态更新失败，请重试');
+    } finally {
+      workStatusUpdating.value = false;
+    }
   }
 
   function exitToShop() {
@@ -465,6 +531,11 @@
 
   .ghost-btn[disabled] {
     opacity: 0.45;
+  }
+
+  .ghost-btn.active {
+    color: #ffffff;
+    background: #e60012;
   }
 
   .overview-head,
